@@ -1,0 +1,16 @@
+                           Table "public.orders"
+  Column   |  Type   | Collation | Nullable |           Default            
+-----------+---------+-----------+----------+------------------------------
+ id        | integer |           | not null | generated always as identity
+ client_id | integer |           | not null | 
+ book_id   | integer |           | not null | 
+Indexes:
+    "orders_pkey" PRIMARY KEY, btree (id)
+    "orders_book_id_key" UNIQUE CONSTRAINT, btree (book_id)
+    "idx_orders_client" btree (client_id)
+    "idx_orders_client_book" btree (client_id, book_id)
+    "idx_orders_client_id_filter" btree (client_id) WHERE client_id = 7
+Foreign-key constraints:
+    "orders_book_id_fkey" FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+    "orders_client_id_fkey" FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+
