@@ -1,0 +1,14 @@
+/var/log/my-service.log {
+    daily
+    missingok
+    rotate 7
+    compress
+    delaycompress
+    notifempty
+    create 0644 root root
+    su root root
+    sharedscripts
+    postrotate
+        systemctl restart my-logging.service > /dev/null
+    endscript
+}
