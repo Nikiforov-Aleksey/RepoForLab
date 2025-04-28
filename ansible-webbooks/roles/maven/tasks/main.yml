@@ -1,0 +1,49 @@
+---
+- name: Install Maven on Debian
+  apt:
+    name: maven
+    state: present
+    update_cache: yes
+  when: ansible_os_family == 'Debian'
+  register: maven_install
+
+- name: Install Maven on RedHat
+  yum:
+    name: maven
+    state: present
+  when: ansible_os_family == 'RedHat'
+  register: maven_install
+
+- name: Manual Maven installation (fallback)
+  block:
+    - name: Download Maven
+      get_url:
+        url: "https://archive.apache.org/dist/maven/maven-3/{{ maven_version }}/binaries/apache-maven-{{ maven_version }}-bin.tar.gz"
+        dest: "/tmp/maven.tar.gz"
+        checksum: "{{ maven_checksum }}"
+
+    - name: Create installation directory
+      file:
+        path: "{{ maven_install_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Extract Maven
+      unarchive:
+        src: "/tmp/maven.tar.gz"
+        dest: "{{ maven_install_dir }}"
+        remote_src: yes
+        extra_opts: ["--strip-components=1"]
+
+    - name: Create symlink
+      file:
+        src: "{{ maven_install_dir }}/apache-maven-{{ maven_version }}/bin/mvn"
+        dest: "/usr/local/bin/mvn"
+        state: link
+        force: yes
+  when: 
+    - maven_install is defined 
+    - not maven_install.changed
+  rescue:
+    - debug:
+        msg: "Maven installation failed"

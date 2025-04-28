@@ -1,0 +1,61 @@
+---
+- name: Add PostgreSQL GPG key (Debian)
+  apt_key:
+    url: "https://www.postgresql.org/media/keys/ACCC4CF8.asc"
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Add PostgreSQL repository (Debian)
+  apt_repository:
+    repo: "deb http://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release }}-pgdg main"
+    state: present
+    filename: postgresql
+    update_cache: yes
+  when: ansible_os_family == 'Debian'
+
+- name: Update apt cache
+  apt:
+    update_cache: yes
+  when: ansible_os_family == 'Debian'
+
+- name: Install PostgreSQL (Debian)
+  apt:
+    name: "{{ ['postgresql-' + postgres_version, 'postgresql-client-' + postgres_version, 'postgresql-contrib'] }}"
+    state: present
+  when: ansible_os_family == 'Debian'
+  notify: restart postgresql
+
+- name: Start and enable PostgreSQL
+  service:
+    name: postgresql
+    state: started
+    enabled: yes
+
+- name: Wait for PostgreSQL to start
+  wait_for:
+    path: "/var/run/postgresql/.s.PGSQL.5432"
+    delay: 5
+    timeout: 60
+
+- name: Check if PostgreSQL socket exists
+  stat:
+    path: "/var/run/postgresql/.s.PGSQL.5432"
+  register: pg_socket
+
+- name: Create PostgreSQL user (using psql command)
+  become: yes
+  command: >
+    psql -h localhost -U postgres -c "CREATE USER {{ postgres_user }} WITH PASSWORD '{{ postgres_password }}';"
+  when: pg_socket.stat.exists
+  register: create_user
+  changed_when: create_user.rc == 0
+  ignore_errors: yes
+
+- name: Create PostgreSQL database (using psql command)
+  become: yes
+  command: >
+    psql -h localhost -U postgres -c "CREATE DATABASE {{ postgres_db }} OWNER {{ postgres_user }};"
+  when: pg_socket.stat.exists
+  register: create_db
+  changed_when: create_db.rc == 0
+  ignore_errors: yes
