@@ -1,0 +1,10 @@
+---
+- hosts: all
+  become: yes
+  vars_files:
+    -  "/vagrant/ansible-webbooks/group_vars/all.yml"
+  roles:
+    - jdk
+    - maven
+    - postgres
+    - nginx

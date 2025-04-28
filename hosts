@@ -1,0 +1,5 @@
+[debian]
+localhost ansible_connection=local
+
+[centos]
+localhost ansible_connection=local

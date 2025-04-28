@@ -1,0 +1,19 @@
+﻿---
+# JDK Settings
+jdk_version: 11
+
+# Maven Settings
+maven_version: "3.8.6"
+maven_install_dir: "/opt/maven"
+maven_checksum: "sha256:c7047a48deb626abf26f71ab3643d296db9b1e67f1faa7d988637deac876b5a9"
+
+# PostgreSQL Settings
+postgres_version: "13"
+postgres_user: "appuser"
+postgres_password: "password"
+postgres_db: "appdb"
+postgres_port: 5432
+
+# Nginx Settings
+nginx_worker_processes: 4
+nginx_keepalive_timeout: 65

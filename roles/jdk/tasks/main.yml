@@ -1,0 +1,37 @@
+---
+- name: Install JDK on Debian
+  apt:
+    name: openjdk-11-jdk
+    state: present
+    update_cache: yes
+  when: ansible_os_family == 'Debian'
+  register: jdk_install
+
+- name: Install JDK on RedHat
+  yum:
+    name: java-11-openjdk-devel
+    state: present
+  when: ansible_os_family == 'RedHat'
+  register: jdk_install
+
+- name: Set JAVA_HOME (Debian)
+  shell: |
+    update-alternatives --list java | head -1 | sed 's%/bin/java%%'
+  when: ansible_os_family == 'Debian'
+  register: java_home_path
+  changed_when: false
+
+- name: Set JAVA_HOME (RedHat)
+  shell: |
+    dirname $(dirname $(readlink -f $(which java)))
+  when: ansible_os_family == 'RedHat'
+  register: java_home_path
+  changed_when: false
+
+- name: Configure JAVA_HOME
+  lineinfile:
+    path: /etc/environment
+    line: 'JAVA_HOME={{ java_home_path.stdout }}'
+    state: present
+    create: yes
+  when: java_home_path.stdout is defined
