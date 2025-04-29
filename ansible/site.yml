@@ -1,0 +1,12 @@
+---
+- hosts: db
+  roles:
+    - postgres
+
+- hosts: app
+  roles:
+    - java
+
+- hosts: front
+  roles:
+    - nginx

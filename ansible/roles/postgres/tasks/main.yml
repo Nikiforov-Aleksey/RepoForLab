@@ -1,0 +1,32 @@
+---
+- name: Install PostgreSQL
+  apt:
+    name: "postgresql-{{ postgres_version }}"
+    state: present
+    update_cache: yes
+
+- name: Ensure PostgreSQL is running
+  service:
+    name: postgresql
+    state: started
+    enabled: yes
+
+- name: Create database user (using raw SQL)
+  become: yes
+  command: >
+    sudo -u postgres psql -c 
+    "CREATE USER {{ db_user }} WITH PASSWORD '{{ db_password }}';"
+  register: create_user
+  failed_when: 
+    - create_user.rc != 0
+    - "'already exists' not in create_user.stderr"
+
+- name: Create database (using raw SQL)
+  become: yes
+  command: >
+    sudo -u postgres psql -c 
+    "CREATE DATABASE {{ db_name }} OWNER {{ db_user }};"
+  register: create_db
+  failed_when:
+    - create_db.rc != 0
+    - "'already exists' not in create_db.stderr"
