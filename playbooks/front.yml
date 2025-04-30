@@ -1,0 +1,7 @@
+---
+- hosts: front
+  become: yes
+  roles:
+    - nginx
+  vars_files:
+    - ../inventory/group_vars/front.yml

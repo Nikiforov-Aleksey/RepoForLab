@@ -1,0 +1,6 @@
+---
+postgres_version: "12"
+db_name: "webbooks"
+db_user: "webbooks_user"
+db_password: "secure_password"
+back_private_ip: "192.168.56.11"

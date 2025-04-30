@@ -1,0 +1,4 @@
+---
+nginx_server_name: "webbooks.local"
+nginx_backend_ip: "192.168.56.11"
+nginx_backend_port: "8080"

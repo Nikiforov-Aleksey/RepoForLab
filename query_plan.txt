@@ -1,0 +1,17 @@
+                                                                QUERY PLAN                                                                 
+-------------------------------------------------------------------------------------------------------------------------------------------
+ Aggregate  (cost=17.40..17.41 rows=1 width=8) (actual time=0.072..0.073 rows=1 loops=1)
+   ->  Nested Loop  (cost=0.30..17.40 rows=1 width=0) (actual time=0.062..0.069 rows=2 loops=1)
+         ->  Nested Loop  (cost=0.15..9.22 rows=1 width=4) (actual time=0.043..0.048 rows=2 loops=1)
+               ->  Seq Scan on orders o  (cost=0.00..1.02 rows=1 width=8) (actual time=0.010..0.011 rows=2 loops=1)
+                     Filter: (client_id = 7)
+               ->  Index Only Scan using books_pkey on books b  (cost=0.15..8.17 rows=1 width=4) (actual time=0.016..0.017 rows=1 loops=2)
+                     Index Cond: (id = o.book_id)
+                     Heap Fetches: 2
+         ->  Index Only Scan using clients_pkey on clients c  (cost=0.15..8.17 rows=1 width=4) (actual time=0.009..0.010 rows=1 loops=2)
+               Index Cond: (id = 7)
+               Heap Fetches: 2
+ Planning Time: 0.820 ms
+ Execution Time: 0.271 ms
+(13 rows)
+
