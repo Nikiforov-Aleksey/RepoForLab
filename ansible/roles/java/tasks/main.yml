@@ -1,0 +1,11 @@
+---
+- name: Install JDK
+  apt:
+    name: "openjdk-11-jdk"
+    state: present
+    update_cache: yes
+
+- name: Set JAVA_HOME environment variable
+  template:
+    src: java_env.j2
+    dest: /etc/profile.d/java.sh

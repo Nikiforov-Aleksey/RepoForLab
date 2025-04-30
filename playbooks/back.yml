@@ -1,0 +1,30 @@
+---
+- name: Configure back server
+  hosts: app
+  become: yes
+  vars_files:
+    - ../inventory/group_vars/back.yml
+  
+  roles:
+    - { role: '../ansible/roles/java', tags: ['java'] }
+  
+  tasks:
+    - name: Deploy Webbooks application
+      copy:
+        src: "{{ app_source_path }}"
+        dest: "/opt/webbooks/webbooks.jar"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0644"
+      
+    - name: Create systemd service
+      template:
+        src: webbooks.service.j2
+        dest: /etc/systemd/system/webbooks.service
+      notify: restart webbooks
+      
+    - name: Ensure app is running
+      service:
+        name: webbooks
+        state: started
+        enabled: yes

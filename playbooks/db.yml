@@ -1,0 +1,7 @@
+---
+- hosts: db
+  become: yes
+  roles:
+    - postgres
+  vars_files:
+    - "{{ playbook_dir }}/ansible/inventory/group_vars/db.yml"
