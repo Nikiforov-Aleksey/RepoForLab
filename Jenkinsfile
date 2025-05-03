@@ -1,42 +1,28 @@
 pipeline {
     agent any
-
     tools {
-        maven 'Maven 3.8.6'  
+        maven 'Maven 3.8.6'
     }
-
     environment {
         DB_URL = 'jdbc:postgresql://10.130.0.24:5432/webbooks'
-        DB_USERNAME = credentials('db-username')  
-        DB_PASSWORD = credentials('db-password')  
+        DB_CREDS = credentials('webbooks-db-creds')  # ID из Jenkins Credentials
     }
-
     stages {
         stage('Checkout') {
             steps {
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: '*/main']], 
-                    extensions: [],
-                    userRemoteConfigs: [[
-                        url: 'https://github.com/Nikiforov-Aleksey/RepoForLab.git',
-                        credentialsId: 'your-github-creds'  
-                    ]]
-                ])
+                checkout scm
             }
         }
-
         stage('Build') {
             steps {
-                dir('apps/webbooks') {  
-                    sh 'mvn clean package -DDB.url=$DB_URL -DDB.username=$DB_USERNAME -DDB.password=$DB_PASSWORD'
+                dir('apps/webbooks') {
+                    sh "mvn clean package -DDB.url=$DB_URL -DDB.username=$DB_CREDS_USR -DDB.password=$DB_CREDS_PSW"
                 }
             }
         }
-
         stage('Unit Tests') {
             when {
-                changeRequest() 
+                changeRequest()
             }
             steps {
                 dir('apps/webbooks') {
@@ -49,14 +35,15 @@ pipeline {
                 }
             }
         }
-
-        stage('Deploy') {
+        stage('Artifact & Deploy') {
             when {
                 branch 'main'
             }
             steps {
                 archiveArtifacts 'apps/webbooks/target/*.jar'
-                build job: 'Webbooks-Deploy', wait: false
+                build job: 'Webbooks-Deploy', parameters: [
+                    string(name: 'ARTIFACT_PATH', value: 'apps/webbooks/target/webbooks.jar')
+                ], wait: false
             }
         }
     }
