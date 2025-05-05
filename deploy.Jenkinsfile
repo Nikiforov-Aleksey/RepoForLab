@@ -2,7 +2,7 @@ pipeline {
     agent any
     
     parameters {
-        string(name: 'ARTIFACT_PATH', description: 'Path to JAR file', defaultValue: 'apps/webbooks/target/webbooks.jar')
+        string(name: 'ARTIFACT_PATH', description: 'Path to JAR file', defaultValue: 'apps/webbooks/target/DigitalLibrary-0.0.1-SNAPSHOT.jar')
         string(name: 'TARGET_HOST', description: 'Target server IP', defaultValue: '10.130.0.24')
         string(name: 'DEPLOY_PATH', description: 'Deployment directory', defaultValue: '/opt/webbooks')
     }
