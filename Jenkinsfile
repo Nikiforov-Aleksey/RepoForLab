@@ -9,7 +9,7 @@ pipeline {
         DB_URL = 'jdbc:postgresql://10.130.0.24:5432/webbooks'
         DEPLOY_HOST = '10.130.0.24'
         DEPLOY_PATH = '/opt/webbooks'
-        ARTIFACT_NAME = 'DigitalLibrary-0.0.1-SNAPSHOT.jar'
+        ARTIFACT_NAME = 'webbooks.jar' // Изменено на фиксированное имя
     }
     
     stages {
@@ -34,10 +34,19 @@ pipeline {
                         passwordVariable: 'DB_PASS'
                     )]) {
                         sh '''
+                            # Собираем проект с фиксированным именем артефакта
                             mvn --batch-mode clean package \
                             -DDB.url=$DB_URL \
                             -DDB.username=$DB_USER \
-                            -DDB.password=$DB_PASS
+                            -DDB.password=$DB_PASS \
+                            -DfinalName=webbooks
+                            
+                            # Проверяем что артефакт создан
+                            if [ ! -f "target/webbooks.jar" ]; then
+                                echo "ERROR: Основной артефакт не найден: target/webbooks.jar"
+                                ls -la target/
+                                exit 1
+                            fi
                         '''
                     }
                 }
@@ -50,35 +59,22 @@ pipeline {
             }
         }
         
-        stage('Prepare Artifact') {
+        stage('Archive Artifacts') {
             when {
                 branch 'main'
             }
             steps {
                 dir('apps/webbooks') {
-                    // Архивируем оригинальный артефакт
-                    archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
-                    
-                    // Переименовываем артефакт для деплоя
-                    sh """
-                        # Проверяем что оригинальный артефакт существует
-                        if [ ! -f "target/${env.ARTIFACT_NAME}" ]; then
-                            echo "ERROR: Основной артефакт не найден: target/${env.ARTIFACT_NAME}"
-                            exit 1
-                        fi
-                        
-                        # Копируем с новым именем
-                        cp "target/${env.ARTIFACT_NAME}" "target/webbooks.jar"
-                        
-                        # Проверяем что копия создана
-                        if [ ! -f "target/webbooks.jar" ]; then
-                            echo "ERROR: Не удалось создать webbooks.jar"
-                            exit 1
-                        fi
-                    """
-                    
-                    // Архивируем копию с фиксированным именем
+                    // Архивируем только нужный артефакт
                     archiveArtifacts artifacts: 'target/webbooks.jar', fingerprint: true
+                    
+                    // Дополнительная проверка
+                    sh '''
+                        echo "Проверка артефакта перед архивированием:"
+                        ls -la target/webbooks.jar
+                        file target/webbooks.jar
+                        jar -tf target/webbooks.jar | head -5
+                    '''
                 }
             }
         }
@@ -88,7 +84,6 @@ pipeline {
                 branch 'main'
             }
             steps {
-                // Передаем путь к артефакту в параметрах
                 build job: 'Webbooks-Deploy',
                     parameters: [
                         string(name: 'TARGET_HOST', value: env.DEPLOY_HOST),
@@ -103,19 +98,14 @@ pipeline {
     
     post {
         always {
-            // Дополнительная диагностика
             script {
-                try {
-                    dir('apps/webbooks/target') {
-                        sh '''
-                            echo "Содержимое target директории:"
-                            ls -la
-                            echo "Размер webbooks.jar:"
-                            du -h webbooks.jar
-                        '''
-                    }
-                } catch (e) {
-                    echo "Не удалось выполнить диагностику: ${e}"
+                dir('apps/webbooks/target') {
+                    sh '''
+                        echo "=== Финальная проверка артефактов ==="
+                        ls -la
+                        echo "Размер webbooks.jar:"
+                        du -h webbooks.jar
+                    '''
                 }
             }
         }
