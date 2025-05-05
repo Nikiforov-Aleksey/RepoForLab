@@ -53,31 +53,45 @@ pipeline {
                             scp -o StrictHostKeyChecking=no -i "$SSH_KEY" "$ACTUAL_ARTIFACT_PATH" $SSH_USER@${params.TARGET_HOST}:/tmp/webbooks.jar
                         """
                         
-                        // 2. Выполняем команды развертывания
+                        // 2. Выполняем команды развертывания через отдельный скрипт
+                        def deployScript = '''
+                            #!/bin/bash
+                            set -e
+                            
+                            # Проверяем существование файла
+                            if [ ! -f "/tmp/webbooks.jar" ]; then
+                                echo "Error: Artifact not found on target server"
+                                exit 1
+                            fi
+                            
+                            # Останавливаем сервис
+                            sudo systemctl stop webbooks || true
+                            
+                            # Копируем новый артефакт
+                            sudo cp /tmp/webbooks.jar /opt/webbooks/webbooks.jar
+                            sudo chown webbooks:webbooks /opt/webbooks/webbooks.jar
+                            
+                            # Запускаем сервис
+                            sudo systemctl start webbooks
+                            sleep 5
+                            
+                            # Проверяем статус
+                            if ! sudo systemctl is-active webbooks; then
+                                echo "Error: Service failed to start"
+                                exit 1
+                            fi
+                        '''
+                        
+                        // Сохраняем скрипт локально
+                        writeFile file: 'deploy.sh', text: deployScript
+                        
+                        // Копируем и выполняем скрипт на удаленном сервере
                         sh """
+                            scp -o StrictHostKeyChecking=no -i "$SSH_KEY" deploy.sh $SSH_USER@${params.TARGET_HOST}:/tmp/
                             ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" $SSH_USER@${params.TARGET_HOST} '
-                                # Проверяем существование файла
-                                if [ ! -f "/tmp/webbooks.jar" ]; then
-                                    echo "Error: Artifact not found on target server"
-                                    exit 1
-                                fi
-                                
-                                # Останавливаем сервис
-                                sudo systemctl stop $SERVICE_NAME || true
-                                
-                                # Копируем новый артефакт
-                                sudo cp /tmp/webbooks.jar ${params.DEPLOY_PATH}/webbooks.jar
-                                sudo chown webbooks:webbooks ${params.DEPLOY_PATH}/webbooks.jar
-                                
-                                # Запускаем сервис
-                                sudo systemctl start $SERVICE_NAME
-                                sleep 5
-                                
-                                # Проверяем статус
-                                if ! sudo systemctl is-active $SERVICE_NAME; then
-                                    echo "Error: Service failed to start"
-                                    exit 1
-                                fi
+                                chmod +x /tmp/deploy.sh
+                                /tmp/deploy.sh
+                                rm -f /tmp/deploy.sh
                             '
                         """
                     }
