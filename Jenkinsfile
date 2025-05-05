@@ -80,10 +80,6 @@ pipeline {
         always {
             cleanWs()
         }
-        failure {
-            emailext body: "Сборка ${env.JOB_NAME} #${env.BUILD_NUMBER} завершилась неудачно",
-                    subject: "FAILED: ${env.JOB_NAME}",
-                    to: 'scyvocer@gmail.com'
-        }
+        // Удален блок failure с уведомлениями
     }
 }
