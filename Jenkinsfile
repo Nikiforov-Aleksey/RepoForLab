@@ -2,7 +2,7 @@ pipeline {
     agent any
     
     tools {
-        maven '3.2.5'  // Обновленная версия Maven
+        maven '3.2.5'  
     }
     
     environment {
