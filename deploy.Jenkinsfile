@@ -9,6 +9,7 @@ pipeline {
     environment {
         SSH_CREDS = credentials('webbooks-ssh-creds')
         SERVICE_NAME = 'webbooks'
+        ARTIFACT_NAME = 'DigitalLibrary-0.0.1-SNAPSHOT.jar'  // Указываем реальное имя файла
     }
     
     stages {
@@ -17,12 +18,15 @@ pipeline {
                 // Копируем артефакт из предыдущего успешного билда
                 copyArtifacts(
                     projectName: 'Webbooks-Multibranch/main',  // Имя исходного джоба
-                    selector: lastSuccessful(),               // Берем последний успешный билд
-                    filter: 'apps/webbooks/target/webbooks.jar',  // Путь к артефакту
-                    target: '.'                               // Копируем в текущую директорию
+                    selector: lastSuccessful(),                // Берем последний успешный билд
+                    filter: "apps/webbooks/target/${env.ARTIFACT_NAME}",  // Правильный путь к артефакту
+                    target: '.',                              // Копируем в текущую директорию
+                    flatten: true                             // Игнорируем структуру папок
                 )
                 
-                // Убеждаемся, что файл скопирован
+                // Переименовываем файл для удобства (если нужно)
+                sh "mv ${env.ARTIFACT_NAME} webbooks.jar"
+                
                 script {
                     if (!fileExists('webbooks.jar')) {
                         error("Failed to copy artifact from build job")
