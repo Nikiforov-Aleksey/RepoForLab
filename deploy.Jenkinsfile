@@ -19,7 +19,7 @@ pipeline {
                     def buildNumber = build(job: params.SOURCE_JOB, propagate: false).number
                     def artifactUrl = "${env.JENKINS_URL}job/${params.SOURCE_JOB}/${buildNumber}/artifact/${params.ARTIFACT_PATH}"
                     
-                    echo "Downloading artifact from: ${artifactUrl}"
+                    echo "Скачиваем артефакт из: ${artifactUrl}"
                     
                     withCredentials([usernamePassword(
                         credentialsId: 'jenkins-api-token',
@@ -32,7 +32,7 @@ pipeline {
                     }
                     
                     if (!fileExists('webbooks.jar')) {
-                        error("Failed to download artifact from ${artifactUrl}")
+                        error("Не удалось скачать артефакт из ${artifactUrl}")
                     }
                     
                     env.ACTUAL_ARTIFACT_PATH = "${pwd()}/webbooks.jar"
@@ -48,44 +48,50 @@ pipeline {
                         keyFileVariable: 'SSH_KEY',
                         usernameVariable: 'SSH_USER'
                     )]) {
-                        // 1. Копируем файл на сервер
+                        // 1. Копируем артефакт
                         sh """
                             scp -o StrictHostKeyChecking=no -i "$SSH_KEY" "$ACTUAL_ARTIFACT_PATH" $SSH_USER@${params.TARGET_HOST}:/tmp/webbooks.jar
                         """
                         
-                        // 2. Выполняем команды развертывания через отдельный скрипт
+                        // 2. Создаем скрипт деплоя
                         def deployScript = '''
                             #!/bin/bash
-                            set -e
-                            
-                            # Проверяем существование файла
+                            set -ex
+
+                            # Проверяем артефакт
                             if [ ! -f "/tmp/webbooks.jar" ]; then
-                                echo "Error: Artifact not found on target server"
+                                echo "ERROR: Артефакт не найден в /tmp/webbooks.jar"
                                 exit 1
                             fi
-                            
+
                             # Останавливаем сервис
                             sudo systemctl stop webbooks || true
-                            
-                            # Копируем новый артефакт
+
+                            # Бэкапим предыдущую версию
+                            sudo cp /opt/webbooks/webbooks.jar /opt/webbooks/webbooks.jar.bak || true
+
+                            # Развертываем новую версию
                             sudo cp /tmp/webbooks.jar /opt/webbooks/webbooks.jar
                             sudo chown webbooks:webbooks /opt/webbooks/webbooks.jar
-                            
+
                             # Запускаем сервис
+                            echo "Запуск сервиса webbooks..."
                             sudo systemctl start webbooks
+
+                            # Проверяем
                             sleep 5
-                            
-                            # Проверяем статус
-                            if ! sudo systemctl is-active webbooks; then
-                                echo "Error: Service failed to start"
+                            service_status=$(sudo systemctl is-active webbooks)
+                            if [ "$service_status" != "active" ]; then
+                                echo "ERROR: Не удалось запустить сервис. Текущий статус: $service_status"
+                                sudo journalctl -u webbooks -n 50 --no-pager
                                 exit 1
                             fi
+                            echo "Сервис успешно запущен"
                         '''
                         
-                        // Сохраняем скрипт локально
                         writeFile file: 'deploy.sh', text: deployScript
                         
-                        // Копируем и выполняем скрипт на удаленном сервере
+                        // 3. Выполняем деплой
                         sh """
                             scp -o StrictHostKeyChecking=no -i "$SSH_KEY" deploy.sh $SSH_USER@${params.TARGET_HOST}:/tmp/
                             ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" $SSH_USER@${params.TARGET_HOST} '
@@ -109,12 +115,17 @@ pipeline {
                     )]) {
                         sh """
                             ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" $SSH_USER@${params.TARGET_HOST} '
-                                # Проверяем health endpoint
-                                if ! curl -s --connect-timeout 10 http://localhost:8080/actuator/health | grep -q \'"status":"UP"\'; then
-                                    echo "Error: Health check failed"
-                                    exit 1
-                                fi
-                                echo "Deployment verification successful"
+                                # Ожидаем готовности сервиса
+                                for i in {1..10}; do
+                                    if curl -s --connect-timeout 5 http://localhost:8080/actuator/health | grep -q \'"status":"UP"\'; then
+                                        echo "Health check пройден"
+                                        exit 0
+                                    fi
+                                    sleep 5
+                                done
+                                echo "ERROR: Health check не пройден после 50 секунд ожидания"
+                                sudo journalctl -u webbooks -n 50 --no-pager
+                                exit 1
                             '
                         """
                     }
@@ -138,7 +149,26 @@ pipeline {
                         """
                     }
                 } catch (e) {
-                    echo "Warning: Failed to clean up temporary file: ${e}"
+                    echo "Warning: Не удалось очистить временные файлы: ${e}"
+                }
+            }
+        }
+        failure {
+            script {
+                // Получаем логи сервиса при ошибке
+                withCredentials([sshUserPrivateKey(
+                    credentialsId: 'webbooks-ssh-creds',
+                    keyFileVariable: 'SSH_KEY',
+                    usernameVariable: 'SSH_USER'
+                )]) {
+                    sh """
+                        ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" $SSH_USER@${params.TARGET_HOST} '
+                            echo "=== Статус сервиса Webbooks ==="
+                            sudo systemctl status webbooks --no-pager || true
+                            echo "=== Последние логи ==="
+                            sudo journalctl -u webbooks -n 50 --no-pager || true
+                        '
+                    """
                 }
             }
         }
