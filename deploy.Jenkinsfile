@@ -17,6 +17,7 @@ pipeline {
             steps {
                 script {
                     def buildNumber = build(job: params.SOURCE_JOB, propagate: false).number
+                    // Экранируем $ в URL
                     def artifactUrl = "${env.JENKINS_URL}job/${params.SOURCE_JOB}/${buildNumber}/artifact/${params.ARTIFACT_PATH}"
                     
                     echo "Скачиваем артефакт из: ${artifactUrl}"
@@ -26,8 +27,9 @@ pipeline {
                         usernameVariable: 'JENKINS_USER',
                         passwordVariable: 'JENKINS_TOKEN'
                     )]) {
-                        sh """
-                            curl -sSL -u "$JENKINS_USER:$JENKINS_TOKEN" -o webbooks.jar "${artifactUrl}"
+                        // Используем одинарные кавычки для URL и экранируем $
+                        sh '''
+                            curl -sSL -u "$JENKINS_USER:$JENKINS_TOKEN" -o webbooks.jar "'${artifactUrl}'"
                             
                             # Проверка JAR-файла
                             if ! jar -tf webbooks.jar >/dev/null 2>&1; then
@@ -40,7 +42,7 @@ pipeline {
                                 echo "ERROR: JAR-файл слишком мал (${filesize} bytes)"
                                 exit 1
                             fi
-                        """
+                        '''
                     }
                     
                     env.ACTUAL_ARTIFACT_PATH = "${pwd()}/webbooks.jar"
@@ -62,8 +64,7 @@ pipeline {
                         """
                         
                         // Создаем скрипт деплоя
-                        def deployScript = '''
-                            #!/bin/bash
+                        def deployScript = '''#!/bin/bash
                             set -ex
 
                             # Проверки
@@ -122,8 +123,71 @@ pipeline {
             }
         }
         
-        // ... остальные этапы без изменений ...
+        stage('Verify') {
+            steps {
+                script {
+                    withCredentials([sshUserPrivateKey(
+                        credentialsId: 'webbooks-ssh-creds',
+                        keyFileVariable: 'SSH_KEY',
+                        usernameVariable: 'SSH_USER'
+                    )]) {
+                        sh '''
+                            ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" $SSH_USER@${params.TARGET_HOST} "
+                                # Ожидаем готовности сервиса
+                                for i in {1..10}; do
+                                    if curl -s --connect-timeout 5 http://localhost:8080/actuator/health | grep -q '"status":"UP"'; then
+                                        echo "Health check пройден"
+                                        exit 0
+                                    fi
+                                    sleep 5
+                                done
+                                echo "ERROR: Health check не пройден после 50 секунд ожидания"
+                                sudo journalctl -u webbooks -n 50 --no-pager
+                                exit 1
+                            "
+                        '''
+                    }
+                }
+            }
+        }
     }
     
-    // ... post-секция без изменений ...
+    post {
+        always {
+            cleanWs()
+            script {
+                try {
+                    withCredentials([sshUserPrivateKey(
+                        credentialsId: 'webbooks-ssh-creds',
+                        keyFileVariable: 'SSH_KEY',
+                        usernameVariable: 'SSH_USER'
+                    )]) {
+                        sh '''
+                            ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" $SSH_USER@${params.TARGET_HOST} "rm -f /tmp/webbooks.jar" || true
+                        '''
+                    }
+                } catch (e) {
+                    echo "Warning: Не удалось очистить временные файлы: ${e}"
+                }
+            }
+        }
+        failure {
+            script {
+                withCredentials([sshUserPrivateKey(
+                    credentialsId: 'webbooks-ssh-creds',
+                    keyFileVariable: 'SSH_KEY',
+                    usernameVariable: 'SSH_USER'
+                )]) {
+                    sh '''
+                        ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" $SSH_USER@${params.TARGET_HOST} "
+                            echo '=== Статус сервиса Webbooks ==='
+                            sudo systemctl status webbooks --no-pager || true
+                            echo '=== Последние логи ==='
+                            sudo journalctl -u webbooks -n 50 --no-pager || true
+                        "
+                    '''
+                }
+            }
+        }
+    }
 }
