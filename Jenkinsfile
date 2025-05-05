@@ -2,12 +2,14 @@ pipeline {
     agent any
     
     tools {
-        maven '3.2.5' 
+        maven '3.2.5'
     }
     
     environment {
         DB_URL = 'jdbc:postgresql://10.130.0.24:5432/webbooks'
         DB_CREDS = credentials('webbooks-db-creds')
+        DEPLOY_HOST = '10.130.0.24'
+        DEPLOY_PATH = '/opt/webbooks'
     }
     
     stages {
@@ -64,14 +66,13 @@ pipeline {
                 branch 'main'
             }
             steps {
-                build job: 'Webbooks-Deploy-Pipeline',
+                build job: 'Webbooks-Deploy',
                     parameters: [
                         string(name: 'ARTIFACT_PATH', value: 'apps/webbooks/target/webbooks.jar'),
-                        string(name: 'TARGET_HOST', value: '10.130.0.24'),
-                        string(name: 'DEPLOY_PATH', value: '/opt/webbooks')
+                        string(name: 'TARGET_HOST', value: env.DEPLOY_HOST),
+                        string(name: 'DEPLOY_PATH', value: env.DEPLOY_PATH)
                     ],
-                    wait: false,
-                    propagate: false
+                    wait: false
             }
         }
     }
@@ -80,6 +81,5 @@ pipeline {
         always {
             cleanWs()
         }
-        // Удален блок failure с уведомлениями
     }
 }
