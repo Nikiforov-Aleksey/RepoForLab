@@ -5,7 +5,7 @@ pipeline {
     }
     environment {
         DB_URL = 'jdbc:postgresql://10.130.0.24:5432/webbooks'
-        DB_CREDS = credentials('webbooks-db-creds')  # ID из Jenkins Credentials
+        DB_CREDS = credentials('webbooks-db-creds') 
     }
     stages {
         stage('Checkout') {
