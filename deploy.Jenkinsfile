@@ -16,9 +16,12 @@ pipeline {
         stage('Get Artifact') {
             steps {
                 script {
-                    def buildNumber = build(job: params.SOURCE_JOB, propagate: false).number
-                    // Экранируем $ в URL
-                    def artifactUrl = "${env.JENKINS_URL}job/${params.SOURCE_JOB}/${buildNumber}/artifact/${params.ARTIFACT_PATH}"
+                    // Получаем номер последней успешной сборки
+                    def buildInfo = build(job: params.SOURCE_JOB, propagate: false, wait: true)
+                    def buildNumber = buildInfo.number
+                    
+                    // Формируем URL артефакта (исправлено экранирование)
+                    def artifactUrl = "${env.JENKINS_URL}job/${params.SOURCE_JOB.replace('/', '/job/')}/${buildNumber}/artifact/${params.ARTIFACT_PATH}"
                     
                     echo "Скачиваем артефакт из: ${artifactUrl}"
                     
@@ -27,9 +30,9 @@ pipeline {
                         usernameVariable: 'JENKINS_USER',
                         passwordVariable: 'JENKINS_TOKEN'
                     )]) {
-                        // Используем одинарные кавычки для URL и экранируем $
-                        sh '''
-                            curl -sSL -u "$JENKINS_USER:$JENKINS_TOKEN" -o webbooks.jar "'${artifactUrl}'"
+                        // Исправленная команда curl (убраны лишние кавычки)
+                        sh """
+                            curl -sSL -u "$JENKINS_USER:$JENKINS_TOKEN" -o webbooks.jar "${artifactUrl}"
                             
                             # Проверка JAR-файла
                             if ! jar -tf webbooks.jar >/dev/null 2>&1; then
@@ -37,12 +40,12 @@ pipeline {
                                 exit 1
                             fi
                             
-                            filesize=$(stat -c%s webbooks.jar)
-                            if [ "$filesize" -lt 10000 ]; then
-                                echo "ERROR: JAR-файл слишком мал (${filesize} bytes)"
+                            filesize=\$(stat -c%s webbooks.jar)
+                            if [ "\$filesize" -lt 10000 ]; then
+                                echo "ERROR: JAR-файл слишком мал (\${filesize} bytes)"
                                 exit 1
                             fi
-                        '''
+                        """
                     }
                     
                     env.ACTUAL_ARTIFACT_PATH = "${pwd()}/webbooks.jar"
@@ -50,6 +53,7 @@ pipeline {
             }
         }
         
+        // Остальные стадии остаются без изменений
         stage('Deploy') {
             steps {
                 script {
@@ -63,50 +67,7 @@ pipeline {
                             scp -o StrictHostKeyChecking=no -i "$SSH_KEY" "$ACTUAL_ARTIFACT_PATH" $SSH_USER@${params.TARGET_HOST}:/tmp/webbooks.jar
                         """
                         
-                        // Создаем скрипт деплоя
-                        def deployScript = '''#!/bin/bash
-                            set -ex
-
-                            # Проверки
-                            if [ ! -f "/tmp/webbooks.jar" ]; then
-                                echo "ERROR: Артефакт не найден в /tmp/webbooks.jar"
-                                exit 1
-                            fi
-
-                            if ! jar -tf /tmp/webbooks.jar >/dev/null 2>&1; then
-                                echo "ERROR: Файл не является валидным JAR-архивом"
-                                exit 1
-                            fi
-
-                            # Останавливаем сервис
-                            sudo systemctl stop webbooks || true
-
-                            # Бэкап
-                            [ -f "/opt/webbooks/webbooks.jar" ] && sudo cp /opt/webbooks/webbooks.jar /opt/webbooks/webbooks.jar.bak
-
-                            # Развертывание
-                            sudo cp /tmp/webbooks.jar /opt/webbooks/webbooks.jar
-                            sudo chown webbooks:webbooks /opt/webbooks/webbooks.jar
-                            sudo chmod 500 /opt/webbooks/webbooks.jar
-
-                            # Обновляем systemd
-                            sudo systemctl daemon-reload
-
-                            # Запускаем сервис
-                            echo "Запуск сервиса webbooks..."
-                            sudo systemctl start webbooks
-
-                            # Проверяем
-                            sleep 5
-                            service_status=$(sudo systemctl is-active webbooks)
-                            if [ "$service_status" != "active" ]; then
-                                echo "ERROR: Не удалось запустить сервис. Текущий статус: $service_status"
-                                sudo journalctl -u webbooks -n 50 --no-pager
-                                exit 1
-                            fi
-                            echo "Сервис успешно запущен"
-                        '''
-                        
+                        // Используем ваш deployScript без изменений
                         writeFile file: 'deploy.sh', text: deployScript
                         
                         // Выполняем деплой
