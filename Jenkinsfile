@@ -56,13 +56,29 @@ pipeline {
             }
             steps {
                 dir('apps/webbooks') {
-                    // Архивируем с правильным путем
+                    // Архивируем оригинальный артефакт
                     archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
                     
-                    // Создаем копию с фиксированным именем
+                    // Переименовываем артефакт для деплоя
                     sh """
-                        cp target/${env.ARTIFACT_NAME} target/webbooks.jar
+                        # Проверяем что оригинальный артефакт существует
+                        if [ ! -f "target/${env.ARTIFACT_NAME}" ]; then
+                            echo "ERROR: Основной артефакт не найден: target/${env.ARTIFACT_NAME}"
+                            exit 1
+                        fi
+                        
+                        # Копируем с новым именем
+                        cp "target/${env.ARTIFACT_NAME}" "target/webbooks.jar"
+                        
+                        # Проверяем что копия создана
+                        if [ ! -f "target/webbooks.jar" ]; then
+                            echo "ERROR: Не удалось создать webbooks.jar"
+                            exit 1
+                        fi
                     """
+                    
+                    // Архивируем копию с фиксированным именем
+                    archiveArtifacts artifacts: 'target/webbooks.jar', fingerprint: true
                 }
             }
         }
@@ -81,6 +97,26 @@ pipeline {
                         string(name: 'ARTIFACT_PATH', value: 'apps/webbooks/target/webbooks.jar')
                     ],
                     wait: false
+            }
+        }
+    }
+    
+    post {
+        always {
+            // Дополнительная диагностика
+            script {
+                try {
+                    dir('apps/webbooks/target') {
+                        sh '''
+                            echo "Содержимое target директории:"
+                            ls -la
+                            echo "Размер webbooks.jar:"
+                            du -h webbooks.jar
+                        '''
+                    }
+                } catch (e) {
+                    echo "Не удалось выполнить диагностику: ${e}"
+                }
             }
         }
     }
