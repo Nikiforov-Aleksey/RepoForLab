@@ -2,7 +2,7 @@ pipeline {
     agent any
     
     parameters {
-        string(name: 'ARTIFACT_PATH', description: 'Path to JAR file', defaultValue: 'apps/webbooks/target/webbooks.jar')
+        string(name: 'ARTIFACT_PATH', description: 'Path to JAR file', defaultValue: 'target/DigitalLibrary-0.0.1-SNAPSHOT.jar')
         string(name: 'TARGET_HOST', description: 'Target server IP', defaultValue: '10.130.0.24')
         string(name: 'DEPLOY_PATH', description: 'Deployment directory', defaultValue: '/opt/webbooks')
     }
@@ -16,12 +16,33 @@ pipeline {
         stage('Validate Parameters') {
             steps {
                 script {
+                    // Проверяем, что путь указан
                     if (!params.ARTIFACT_PATH?.trim()) {
                         error("ARTIFACT_PATH parameter is required")
                     }
-                    if (!fileExists(params.ARTIFACT_PATH)) {
-                        error("Artifact file not found at ${params.ARTIFACT_PATH}")
+                    
+                    // Ищем артефакт в нескольких возможных местах
+                    def artifactPaths = [
+                        params.ARTIFACT_PATH,
+                        "apps/webbooks/${params.ARTIFACT_PATH}",
+                        "var/lib/jenkins/workspace/webbooks/apps/webbooks/${params.ARTIFACT_PATH}",
+                        "var/lib/jenkins/jobs/Webbooks-Multibranch/branches/main/builds/lastSuccessfulBuild/archive/${params.ARTIFACT_PATH}"
+                    ]
+                    
+                    def foundArtifact = null
+                    for (path in artifactPaths) {
+                        if (fileExists(path)) {
+                            foundArtifact = path
+                            break
+                        }
                     }
+                    
+                    if (!foundArtifact) {
+                        error("Artifact file not found at any of: ${artifactPaths.join(', ')}")
+                    }
+                    
+                    // Сохраняем найденный путь для последующих шагов
+                    env.ACTUAL_ARTIFACT_PATH = foundArtifact
                 }
             }
         }
@@ -30,7 +51,8 @@ pipeline {
             steps {
                 sshagent([env.SSH_CREDS]) {
                     sh """
-                        scp -v -o StrictHostKeyChecking=no ${params.ARTIFACT_PATH} ${env.SSH_CREDS_USR}@${params.TARGET_HOST}:/tmp/webbooks.jar
+                        echo "Copying artifact from ${env.ACTUAL_ARTIFACT_PATH} to target server"
+                        scp -v -o StrictHostKeyChecking=no ${env.ACTUAL_ARTIFACT_PATH} ${env.SSH_CREDS_USR}@${params.TARGET_HOST}:/tmp/webbooks.jar
                     """
                 }
             }
@@ -94,6 +116,11 @@ pipeline {
                 Сборка ${env.JOB_NAME} #${env.BUILD_NUMBER} завершилась неудачно
                 URL сборки: ${env.BUILD_URL}
                 Причина: ${currentBuild.currentResult}
+                Искомые пути к артефакту: 
+                - ${params.ARTIFACT_PATH}
+                - apps/webbooks/${params.ARTIFACT_PATH}
+                - /var/lib/jenkins/workspace/webbooks/apps/webbooks/${params.ARTIFACT_PATH}
+                - /var/lib/jenkins/jobs/Webbooks-Multibranch/branches/main/builds/lastSuccessfulBuild/archive/${params.ARTIFACT_PATH}
             """,
             subject: "FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
             to: 'dev-team@example.com'
@@ -101,7 +128,7 @@ pipeline {
         success {
             emailext body: """
                 Деплой ${env.JOB_NAME} #${env.BUILD_NUMBER} успешно завершен
-                Версия: ${params.ARTIFACT_PATH}
+                Версия: ${env.ACTUAL_ARTIFACT_PATH}
                 Сервер: ${params.TARGET_HOST}
                 Время: ${currentBuild.durationString}
             """,
