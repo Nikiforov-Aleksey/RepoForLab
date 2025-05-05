@@ -22,20 +22,24 @@ pipeline {
             }
         }
         
-        stage('Deploy') {
-            steps {
-                sshagent([env.SSH_CREDS]) {
-                    sh """
-                        ssh -o StrictHostKeyChecking=no ${env.SSH_CREDS_USR}@${params.TARGET_HOST} "
-                            sudo systemctl stop webbooks || true
-                            sudo cp /tmp/webbooks.jar ${params.DEPLOY_PATH}/webbooks.jar
-                            sudo chown webbooks:webbooks ${params.DEPLOY_PATH}/webbooks.jar
-                            sudo systemctl start webbooks
-                        "
-                    """
-                }
-            }
+stage('Deploy') {
+    when {
+        branch 'main'
+    }
+    steps {
+        sshagent(['webbooks-ssh-creds']) {
+            sh """
+                scp -o StrictHostKeyChecking=no apps/webbooks/target/webbooks.jar webbooks@10.130.0.24:/tmp/
+                ssh -o StrictHostKeyChecking=no webbooks@10.130.0.24 "
+                    sudo systemctl stop webbooks || true
+                    sudo cp /tmp/webbooks.jar /opt/webbooks/
+                    sudo chown webbooks:webbooks /opt/webbooks/webbooks.jar
+                    sudo systemctl start webbooks
+                "
+            """
         }
+    }
+}
         
         stage('Verify') {
             steps {
