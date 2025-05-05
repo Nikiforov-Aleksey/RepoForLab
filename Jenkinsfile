@@ -9,6 +9,7 @@ pipeline {
         DB_URL = 'jdbc:postgresql://10.130.0.24:5432/webbooks'
         DEPLOY_HOST = '10.130.0.24'
         DEPLOY_PATH = '/opt/webbooks'
+        ARTIFACT_NAME = 'DigitalLibrary-0.0.1-SNAPSHOT.jar'  // Указываем реальное имя файла
     }
     
     stages {
@@ -55,10 +56,13 @@ pipeline {
             }
             steps {
                 dir('apps/webbooks') {
-                    // Архивируем артефакт для копирования между джобами
-                    archiveArtifacts artifacts: 'target/webbooks.jar', fingerprint: true
+                    // Архивируем артефакт (указываем правильный путь и имя)
+                    archiveArtifacts artifacts: "target/${env.ARTIFACT_NAME}", fingerprint: true
                     
-                    // Также сохраняем в stash для передачи внутри пайплайна (если нужно)
+                    // Переименовываем файл для удобства (опционально)
+                    sh "mv target/${env.ARTIFACT_NAME} target/webbooks.jar"
+                    
+                    // Также сохраняем в stash (если нужно)
                     stash name: 'webbooks-artifact', includes: 'target/webbooks.jar'
                 }
             }
