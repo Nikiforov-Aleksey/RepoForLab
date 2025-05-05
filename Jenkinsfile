@@ -9,7 +9,8 @@ pipeline {
         DB_URL = 'jdbc:postgresql://10.130.0.24:5432/webbooks'
         DEPLOY_HOST = '10.130.0.24'
         DEPLOY_PATH = '/opt/webbooks'
-        ARTIFACT_NAME = 'DigitalLibrary-0.0.1-SNAPSHOT.jar' // Оригинальное имя артефакта
+        ARTIFACT_NAME = 'DigitalLibrary-0.0.1-SNAPSHOT.jar'
+        FINAL_NAME = 'webbooks.jar'
     }
     
     stages {
@@ -33,30 +34,31 @@ pipeline {
                         usernameVariable: 'DB_USER',
                         passwordVariable: 'DB_PASS'
                     )]) {
-                        sh '''
+                        // Используем двойные кавычки для Groovy и одинарные для shell
+                        sh """
                             # Собираем проект
-                            mvn --batch-mode clean package \
-                            -DDB.url=$DB_URL \
-                            -DDB.username=$DB_USER \
-                            -DDB.password=$DB_PASS
+                            mvn --batch-mode clean package \\
+                            -DDB.url=\$DB_URL \\
+                            -DDB.username=\$DB_USER \\
+                            -DDB.password=\$DB_PASS
                             
                             # Проверяем что артефакт создан
-                            if [ ! -f "target/${env.ARTIFACT_NAME}" ]; then
-                                echo "ERROR: Основной артефакт не найден: target/${env.ARTIFACT_NAME}"
+                            if [ ! -f "target/${ARTIFACT_NAME}" ]; then
+                                echo "ERROR: Основной артефакт не найден: target/${ARTIFACT_NAME}"
                                 ls -la target/
                                 exit 1
                             fi
                             
-                            # Создаем копию с именем webbooks.jar
-                            cp "target/${env.ARTIFACT_NAME}" "target/webbooks.jar"
+                            # Создаем копию с нужным именем
+                            cp "target/${ARTIFACT_NAME}" "target/${FINAL_NAME}"
                             
                             # Проверяем что копия создана
-                            if [ ! -f "target/webbooks.jar" ]; then
-                                echo "ERROR: Не удалось создать webbooks.jar"
+                            if [ ! -f "target/${FINAL_NAME}" ]; then
+                                echo "ERROR: Не удалось создать ${FINAL_NAME}"
                                 ls -la target/
                                 exit 1
                             fi
-                        '''
+                        """
                     }
                 }
             }
@@ -75,18 +77,15 @@ pipeline {
             steps {
                 dir('apps/webbooks') {
                     // Архивируем оба артефакта
-                    archiveArtifacts artifacts: 'target/webbooks.jar', fingerprint: true
-                    archiveArtifacts artifacts: "target/${env.ARTIFACT_NAME}", fingerprint: true
+                    archiveArtifacts artifacts: "target/${FINAL_NAME}", fingerprint: true
+                    archiveArtifacts artifacts: "target/${ARTIFACT_NAME}", fingerprint: true
                     
-                    // Дополнительная диагностика
-                    sh '''
+                    // Диагностика
+                    sh """
                         echo "Артефакты для архивирования:"
-                        ls -la target/webbooks.jar
-                        ls -la "target/${env.ARTIFACT_NAME}"
-                        echo "Размеры файлов:"
-                        du -h target/webbooks.jar
-                        du -h "target/${env.ARTIFACT_NAME}"
-                    '''
+                        ls -la target/${FINAL_NAME}
+                        ls -la target/${ARTIFACT_NAME}
+                    """
                 }
             }
         }
@@ -101,7 +100,7 @@ pipeline {
                         string(name: 'TARGET_HOST', value: env.DEPLOY_HOST),
                         string(name: 'DEPLOY_PATH', value: env.DEPLOY_PATH),
                         string(name: 'SOURCE_JOB', value: env.JOB_NAME),
-                        string(name: 'ARTIFACT_PATH', value: 'apps/webbooks/target/webbooks.jar')
+                        string(name: 'ARTIFACT_PATH', value: "apps/webbooks/target/${FINAL_NAME}")
                     ],
                     wait: false
             }
@@ -112,13 +111,22 @@ pipeline {
         always {
             script {
                 dir('apps/webbooks/target') {
+                    // Используем явное обращение к переменным через env
                     sh '''
                         echo "=== Финальная проверка артефактов ==="
                         ls -la
                         echo "Размер webbooks.jar:"
-                        du -h webbooks.jar || true
+                        if [ -f "webbooks.jar" ]; then
+                            du -h webbooks.jar
+                        else
+                            echo "Файл webbooks.jar не найден"
+                        fi
                         echo "Размер оригинального артефакта:"
-                        du -h "${env.ARTIFACT_NAME}" || true
+                        if [ -f "$ARTIFACT_NAME" ]; then
+                            du -h "$ARTIFACT_NAME"
+                        else
+                            echo "Файл $ARTIFACT_NAME не найден"
+                        fi
                     '''
                 }
             }
