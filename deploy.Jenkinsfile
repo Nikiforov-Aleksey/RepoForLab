@@ -1,32 +1,54 @@
 pipeline {
     agent any
+    
     parameters {
-        string(name: 'ARTIFACT_PATH', description: 'Path to JAR file')
+        string(name: 'ARTIFACT_PATH', description: 'Path to built artifact')
+        string(name: 'TARGET_HOST', defaultValue: '10.130.0.24', description: 'Target VM host')
+        string(name: 'DEPLOY_PATH', defaultValue: '/opt/webbooks', description: 'Deployment path on VM')
     }
+    
     environment {
-        DEPLOY_VM = '10.130.0.24'
-        DEPLOY_USER = 'deploy-user'
-        DEPLOY_DIR = '/opt/webbooks'
-        SSH_CREDS = 'vm-ssh-key'  # ID SSH-ключа в Jenkins
+        SSH_CREDS = credentials('vm-ssh-credentials')
     }
+    
     stages {
-        stage('Deploy') {
+        stage('Copy Artifact') {
+            steps {
+                script {
+                    def artifact = findFiles(glob: "${params.ARTIFACT_PATH}")[0]
+                    sshagent([SSH_CREDS]) {
+                        sh """
+                            scp -o StrictHostKeyChecking=no \
+                                ${artifact.path} \
+                                ${SSH_CREDS_USR}@${params.TARGET_HOST}:${params.DEPLOY_PATH}/webbooks.jar
+                        """
+                    }
+                }
+            }
+        }
+        
+        stage('Restart Service') {
             steps {
                 sshagent([SSH_CREDS]) {
                     sh """
-                    scp -o StrictHostKeyChecking=no ${params.ARTIFACT_PATH} ${DEPLOY_USER}@${DEPLOY_VM}:${DEPLOY_DIR}/
-                    ssh ${DEPLOY_USER}@${DEPLOY_VM} 'systemctl restart webbooks'
+                        ssh -o StrictHostKeyChecking=no \
+                            ${SSH_CREDS_USR}@${params.TARGET_HOST} \
+                            "sudo systemctl restart webbooks.service"
                     """
                 }
             }
         }
     }
+    
     post {
         success {
-            slackSend channel: '#devops', message: "Деплой успешен: ${env.BUILD_URL}"
+            slackSend channel: '#deployments',
+                     message: "Успешный деплой webbooks на ${params.TARGET_HOST}"
         }
         failure {
-            slackSend channel: '#devops', color: 'danger', message: "Ошибка деплоя: ${env.BUILD_URL}"
+            emailext body: "Деплой ${env.JOB_NAME} #${env.BUILD_NUMBER} завершился неудачно",
+                    subject: "DEPLOY FAILED: ${env.JOB_NAME}",
+                    to: 'scyvocer@gmail.com'
         }
     }
 }
