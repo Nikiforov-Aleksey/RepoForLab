@@ -1,7 +1,7 @@
 pipeline {
     agent any
     tools {
-        maven 'Maven 3.8.6'  // Используем этот Maven вместо wrapper
+        maven 'Maven 3.2.5'  
     }
     environment {
         DB_URL = 'jdbc:postgresql://10.130.0.24:5432/webbooks'
@@ -16,7 +16,6 @@ pipeline {
         stage('Build') {
             steps {
                 dir('apps/webbooks') {
-                    // Используем mvn вместо ./mvnw
                     sh """
                         mvn clean package \
                         -DDB.url=${DB_URL} \
@@ -32,7 +31,7 @@ pipeline {
             }
             steps {
                 dir('apps/webbooks') {
-                    sh 'mvn test'  // Тоже используем mvn
+                    sh 'mvn test'  
                 }
             }
             post {
