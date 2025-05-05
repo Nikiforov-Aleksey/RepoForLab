@@ -2,10 +2,10 @@ pipeline {
     agent any
     
     parameters {
-        string(name: 'TARGET_HOST', defaultValue: '10.130.0.24', description: 'Target server IP')
-        string(name: 'DEPLOY_PATH', defaultValue: '/opt/webbooks', description: 'Deployment directory')
-        string(name: 'SOURCE_JOB', defaultValue: 'Webbooks-Multibranch/main', description: 'Source job name')
-        string(name: 'ARTIFACT_PATH', defaultValue: '**/webbooks.jar', description: 'Artifact path pattern')
+        string(name: 'TARGET_HOST', description: 'Target server IP', defaultValue: '10.130.0.24')
+        string(name: 'DEPLOY_PATH', description: 'Deployment directory', defaultValue: '/opt/webbooks')
+        string(name: 'SOURCE_JOB', description: 'Source job name', defaultValue: 'Webbooks-Multibranch/main')
+        string(name: 'ARTIFACT_PATH', description: 'Artifact path', defaultValue: 'apps/webbooks/target/webbooks.jar')
     }
     
     environment {
@@ -29,37 +29,29 @@ pipeline {
                         error "Сборка ${params.SOURCE_JOB} завершилась со статусом ${buildInfo.result}"
                     }
                     
-                    // Альтернативный способ получения артефакта без использования Jenkins API
-                    def artifactUrl = "${env.JENKINS_URL}job/${params.SOURCE_JOB.replace('/', '/job/')}/${buildInfo.number}/artifact/${params.ARTIFACT_PATH}"
+                    // Используем copyArtifacts plugin
+                    step([$class: 'CopyArtifact',
+                        projectName: params.SOURCE_JOB,
+                        filter: params.ARTIFACT_PATH,
+                        selector: [$class: 'SpecificBuildSelector', buildNumber: buildInfo.number],
+                        target: '.'
+                    ])
                     
-                    echo "Скачиваем артефакт по шаблону: ${artifactUrl}"
-                    
-                    withCredentials([usernamePassword(
-                        credentialsId: 'jenkins-api-token',
-                        usernameVariable: 'JENKINS_USER',
-                        passwordVariable: 'JENKINS_TOKEN'
-                    )]) {
-                        sh """
-                            # Скачиваем артефакт
-                            curl -v -f -L -u "$JENKINS_USER:$JENKINS_TOKEN" -o webbooks.jar "${artifactUrl}"
-                            
-                            # Проверяем что файл скачан
-                            if [ ! -f "webbooks.jar" ]; then
-                                echo "ERROR: Файл артефакта не был скачан"
-                                exit 1
-                            fi
-                            
-                            # Проверяем что это действительно JAR
-                            if ! jar -tf webbooks.jar >/dev/null 2>&1; then
-                                echo "ERROR: Скачанный файл не является JAR-архивом"
-                                echo "Тип файла:"
-                                file webbooks.jar
-                                exit 1
-                            fi
-                            
-                            echo "Артефакт успешно скачан и проверен"
-                        """
+                    // Проверяем что файл скопирован
+                    if (!fileExists('webbooks.jar')) {
+                        error "Артефакт webbooks.jar не был скопирован"
                     }
+                    
+                    // Проверяем валидность JAR
+                    sh '''
+                        echo "Проверка артефакта:"
+                        ls -la webbooks.jar
+                        file webbooks.jar
+                        if ! jar -tf webbooks.jar >/dev/null 2>&1; then
+                            echo "ERROR: Скачанный файл не является валидным JAR-архивом"
+                            exit 1
+                        fi
+                    '''
                     
                     env.ACTUAL_ARTIFACT_PATH = "${pwd()}/webbooks.jar"
                 }
@@ -83,13 +75,24 @@ pipeline {
                             
                             echo "Выполняем деплой..."
                             ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" $SSH_USER@${params.TARGET_HOST} '
+                                # Останавливаем сервис
                                 sudo systemctl stop webbooks || true
+                                
+                                # Делаем бэкап
                                 [ -f "${params.DEPLOY_PATH}/webbooks.jar" ] && sudo cp "${params.DEPLOY_PATH}/webbooks.jar" "${params.DEPLOY_PATH}/webbooks.jar.bak"
+                                
+                                # Копируем новый артефакт
                                 sudo cp /tmp/webbooks.jar "${params.DEPLOY_PATH}/webbooks.jar"
                                 sudo chown webbooks:webbooks "${params.DEPLOY_PATH}/webbooks.jar"
                                 sudo chmod 500 "${params.DEPLOY_PATH}/webbooks.jar"
+                                
+                                # Перезагружаем systemd
                                 sudo systemctl daemon-reload
+                                
+                                # Запускаем сервис
                                 sudo systemctl start webbooks
+                                
+                                # Проверяем статус
                                 sleep 5
                                 if [ "\$(sudo systemctl is-active webbooks)" != "active" ]; then
                                     echo "ERROR: Не удалось запустить сервис"
