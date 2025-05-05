@@ -9,7 +9,7 @@ pipeline {
         DB_URL = 'jdbc:postgresql://10.130.0.24:5432/webbooks'
         DEPLOY_HOST = '10.130.0.24'
         DEPLOY_PATH = '/opt/webbooks'
-        ARTIFACT_NAME = 'DigitalLibrary-0.0.1-SNAPSHOT.jar'  // Указываем реальное имя файла
+        ARTIFACT_NAME = 'DigitalLibrary-0.0.1-SNAPSHOT.jar'
     }
     
     stages {
@@ -50,20 +50,19 @@ pipeline {
             }
         }
         
-        stage('Archive and Prepare Artifact') {
+        stage('Prepare Artifact') {
             when {
                 branch 'main'
             }
             steps {
                 dir('apps/webbooks') {
-                    // Архивируем артефакт (указываем правильный путь и имя)
-                    archiveArtifacts artifacts: "target/${env.ARTIFACT_NAME}", fingerprint: true
+                    // Архивируем с правильным путем
+                    archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
                     
-                    // Переименовываем файл для удобства (опционально)
-                    sh "mv target/${env.ARTIFACT_NAME} target/webbooks.jar"
-                    
-                    // Также сохраняем в stash (если нужно)
-                    stash name: 'webbooks-artifact', includes: 'target/webbooks.jar'
+                    // Создаем копию с фиксированным именем
+                    sh """
+                        cp target/${env.ARTIFACT_NAME} target/webbooks.jar
+                    """
                 }
             }
         }
@@ -73,19 +72,16 @@ pipeline {
                 branch 'main'
             }
             steps {
+                // Передаем путь к артефакту в параметрах
                 build job: 'Webbooks-Deploy',
                     parameters: [
                         string(name: 'TARGET_HOST', value: env.DEPLOY_HOST),
-                        string(name: 'DEPLOY_PATH', value: env.DEPLOY_PATH)
+                        string(name: 'DEPLOY_PATH', value: env.DEPLOY_PATH),
+                        string(name: 'SOURCE_JOB', value: env.JOB_NAME),
+                        string(name: 'ARTIFACT_PATH', value: 'apps/webbooks/target/webbooks.jar')
                     ],
                     wait: false
             }
-        }
-    }
-    
-    post {
-        always {
-            cleanWs()
         }
     }
 }
