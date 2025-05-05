@@ -2,7 +2,7 @@ pipeline {
     agent any
     
     parameters {
-        string(name: 'ARTIFACT_PATH', description: 'Path to JAR file', defaultValue: 'apps/webbooks/target/DigitalLibrary-0.0.1-SNAPSHOT.jar')
+        string(name: 'ARTIFACT_PATH', description: 'Path to JAR file', defaultValue: 'apps/webbooks/target/webbooks.jar')
         string(name: 'TARGET_HOST', description: 'Target server IP', defaultValue: '10.130.0.24')
         string(name: 'DEPLOY_PATH', description: 'Deployment directory', defaultValue: '/opt/webbooks')
     }
@@ -31,22 +31,6 @@ pipeline {
                 sshagent([env.SSH_CREDS]) {
                     sh """
                         scp -v -o StrictHostKeyChecking=no ${params.ARTIFACT_PATH} ${env.SSH_CREDS_USR}@${params.TARGET_HOST}:/tmp/webbooks.jar
-                    """
-                }
-            }
-        }
-        
-        stage('Modify File') {
-            steps {
-                sshagent([env.SSH_CREDS]) {
-                    sh """
-                        ssh -v -o StrictHostKeyChecking=no ${env.SSH_CREDS_USR}@${params.TARGET_HOST} "
-                            echo 'Modifying the webbooks.jar file...'
-                            # Пример команды для изменения файла
-                            # Здесь вы можете использовать любую команду, которая вам нужна
-                            # Например, если это текстовый файл, можно использовать sed:
-                            # sudo sed -i 's/old_value/new_value/g' ${params.DEPLOY_PATH}/webbooks.jar
-                        "
                     """
                 }
             }
@@ -120,5 +104,9 @@ pipeline {
                 Версия: ${params.ARTIFACT_PATH}
                 Сервер: ${params.TARGET_HOST}
                 Время: ${currentBuild.durationString}
-
-Найти еще
+            """,
+            subject: "SUCCESS: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+            to: 'dev-team@example.com'
+        }
+    }
+}
