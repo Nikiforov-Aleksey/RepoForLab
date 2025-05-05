@@ -49,13 +49,17 @@ pipeline {
             }
         }
         
-        stage('Create Artifact') {
+        stage('Archive and Prepare Artifact') {
             when {
                 branch 'main'
             }
             steps {
                 dir('apps/webbooks') {
-                    archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
+                    // Архивируем артефакт для копирования между джобами
+                    archiveArtifacts artifacts: 'target/webbooks.jar', fingerprint: true
+                    
+                    // Также сохраняем в stash для передачи внутри пайплайна (если нужно)
+                    stash name: 'webbooks-artifact', includes: 'target/webbooks.jar'
                 }
             }
         }
@@ -67,7 +71,6 @@ pipeline {
             steps {
                 build job: 'Webbooks-Deploy',
                     parameters: [
-                        string(name: 'ARTIFACT_PATH', value: 'apps/webbooks/target/webbooks.jar'),
                         string(name: 'TARGET_HOST', value: env.DEPLOY_HOST),
                         string(name: 'DEPLOY_PATH', value: env.DEPLOY_PATH)
                     ],
