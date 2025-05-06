@@ -31,17 +31,12 @@ pipeline {
                     ])
                     
                     // Проверяем что файлы скопированы
-                    if (!fileExists(params.ARTIFACT_PATH)) {
-                        echo "Ищем любой JAR-файл..."
-                        def jars = findFiles(glob: '*.jar')
-                        if (jars) {
-                            env.ACTUAL_ARTIFACT_PATH = jars[0].path
-                            echo "Используем найденный файл: ${env.ACTUAL_ARTIFACT_PATH}"
-                        } else {
-                            error "Не удалось найти JAR-файлы для деплоя"
-                        }
+                    def jarFiles = sh(script: 'ls *.jar', returnStdout: true).trim()
+                    if (jarFiles) {
+                        env.ACTUAL_ARTIFACT_PATH = jarFiles.split('\n')[0]
+                        echo "Используем найденный JAR-файл: ${env.ACTUAL_ARTIFACT_PATH}"
                     } else {
-                        env.ACTUAL_ARTIFACT_PATH = params.ARTIFACT_PATH
+                        error "Не удалось найти JAR-файлы для деплоя"
                     }
                     
                     // Проверяем валидность JAR
