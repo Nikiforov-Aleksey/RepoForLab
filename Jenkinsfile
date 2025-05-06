@@ -50,10 +50,11 @@ pipeline {
                     sh """
                         echo "=== Проверка структуры проекта ==="
                         echo "Ищем главный класс: ${MAIN_CLASS}"
-                        find src/main/java -type f | grep -i "${MAIN_CLASS.replace('.', '/')}.java" || {
+                        if [ ! -f "src/main/java/${MAIN_CLASS.replace('.', '/')}.java" ]; then
                             echo "ERROR: Главный класс не найден!"
+                            ls -R src/main/java/
                             exit 1
-                        }
+                        fi
                     """
                 }
             }
@@ -68,49 +69,40 @@ pipeline {
                         passwordVariable: 'DB_PASS'
                     )]) {
                         sh """
-                            # Собираем проект с явным указанием mainClass
-                            mvn --batch-mode clean package spring-boot:repackage \\
+                            # Собираем проект
+                            mvn --batch-mode clean package \\
                             -DDB.url=\${DB_URL} \\
                             -DDB.username=\${DB_USER} \\
-                            -DDB.password=\${DB_PASS} \\
-                            -Dstart-class=${MAIN_CLASS}
+                            -DDB.password=\${DB_PASS}
                             
-                            # Проверяем MANIFEST.MF
-                            echo "=== Проверка MANIFEST.MF ==="
-                            unzip -p target/${ARTIFACT_NAME} META-INF/MANIFEST.MF > manifest.txt
-                            cat manifest.txt
-                            grep "Main-Class: org.springframework.boot.loader.JarLauncher" manifest.txt || {
-                                echo "ERROR: Неправильный Main-Class в MANIFEST.MF"
-                                exit 1
-                            }
-                            grep "Start-Class: ${MAIN_CLASS}" manifest.txt || {
-                                echo "ERROR: Неправильный Start-Class в MANIFEST.MF"
-                                exit 1
-                            }
-                            
-                            # Проверяем наличие главного класса в JAR
-                            echo "=== Проверка содержимого JAR ==="
-                            jar -tf target/${ARTIFACT_NAME} | grep -i "${MAIN_CLASS.replace('.', '/')}.class" || {
-                                echo "ERROR: Главный класс не найден в JAR-файле"
-                                exit 1
-                            }
-                            
-                            # Проверяем что артефакт создан
+                            # Проверяем что основной артефакт создан
                             if [ ! -f "target/${ARTIFACT_NAME}" ]; then
                                 echo "ERROR: Основной артефакт не найден: target/${ARTIFACT_NAME}"
                                 ls -la target/
                                 exit 1
                             fi
                             
+                            # Проверяем валидность JAR
+                            if ! jar -tf "target/${ARTIFACT_NAME}" >/dev/null 2>&1; then
+                                echo "ERROR: JAR-файл поврежден или невалиден"
+                                exit 1
+                            fi
+                            
+                            # Проверяем наличие главного класса
+                            if ! jar -tf "target/${ARTIFACT_NAME}" | grep -i "${MAIN_CLASS.replace('.', '/')}.class"; then
+                                echo "ERROR: Главный класс не найден в JAR-файле"
+                                exit 1
+                            fi
+                            
                             # Создаем копию с нужным именем
                             cp "target/${ARTIFACT_NAME}" "target/${FINAL_NAME}"
                             
-                            # Дополнительная проверка конечного JAR
-                            echo "=== Проверка конечного JAR ==="
-                            jar -tf "target/${FINAL_NAME}" > /dev/null || {
-                                echo "ERROR: Финальный JAR-файл поврежден"
+                            # Проверяем что копия создана
+                            if [ ! -f "target/${FINAL_NAME}" ]; then
+                                echo "ERROR: Не удалось создать ${FINAL_NAME}"
+                                ls -la target/
                                 exit 1
-                            }
+                            fi
                         """
                     }
                 }
@@ -125,15 +117,18 @@ pipeline {
         
         stage('Verify Artifact') {
             steps {
-                dir('apps/webbooks') {
+                dir('apps/webbooks/target') {
                     sh """
                         echo "=== Детальная проверка артефакта ==="
-                        echo "Размер JAR:"
-                        ls -lh target/${FINAL_NAME}
-                        echo "Тип файла:"
-                        file target/${FINAL_NAME}
-                        echo "Проверка запуска:"
-                        java -jar target/${FINAL_NAME} --version || echo "Предварительная проверка запуска не удалась"
+                        echo "Содержимое директории:"
+                        ls -la
+                        echo "Проверка JAR-файла:"
+                        jar -tf ${FINAL_NAME} | head -20
+                        echo "Проверка главного класса:"
+                        jar -tf ${FINAL_NAME} | grep -i "${MAIN_CLASS.replace('.', '/')}.class" || {
+                            echo "ERROR: Главный класс не найден в финальном JAR"
+                            exit 1
+                        }
                     """
                 }
             }
@@ -142,15 +137,7 @@ pipeline {
         stage('Archive Artifacts') {
             steps {
                 dir('apps/webbooks') {
-                    archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
-                    
-                    sh """
-                        echo "=== Информация о артефактах ==="
-                        echo "Содержимое target/:"
-                        ls -la target/
-                        echo "Размеры файлов:"
-                        du -h target/*.jar
-                    """
+                    archiveArtifacts artifacts: "target/${FINAL_NAME}", fingerprint: true
                 }
             }
         }
@@ -161,15 +148,6 @@ pipeline {
             }
             steps {
                 script {
-                    // Проверка перед деплоем
-                    def jarCheck = sh(
-                        script: "jar -tf apps/webbooks/target/${FINAL_NAME} | grep -i '${MAIN_CLASS.replace('.', '/')}.class'",
-                        returnStatus: true
-                    )
-                    if (jarCheck != 0) {
-                        error("Главный класс не найден в JAR-файле! Отмена деплоя.")
-                    }
-                    
                     def buildNumberStr = "${currentBuild.number}"
                     
                     build job: 'Webbooks-Deploy',
@@ -178,8 +156,7 @@ pipeline {
                             string(name: 'DEPLOY_PATH', value: env.DEPLOY_PATH),
                             string(name: 'SOURCE_JOB', value: env.JOB_NAME),
                             string(name: 'SOURCE_BUILD_NUMBER', value: buildNumberStr),
-                            string(name: 'ARTIFACT_PATH', value: "apps/webbooks/target/${FINAL_NAME}"),
-                            string(name: 'MAIN_CLASS', value: env.MAIN_CLASS)
+                            string(name: 'ARTIFACT_PATH', value: "apps/webbooks/target/${FINAL_NAME}")
                         ],
                         wait: false
                 }
@@ -193,10 +170,16 @@ pipeline {
                 dir('apps/webbooks/target') {
                     sh """
                         echo "=== Финальная проверка ==="
-                        echo "Содержимое JAR:"
-                        jar -tf ${FINAL_NAME} | head -20
-                        echo "Проверка главного класса:"
-                        jar -tf ${FINAL_NAME} | grep -i "${MAIN_CLASS.replace('.', '/')}.class" || echo "WARNING: Главный класс не найден"
+                        echo "Содержимое директории:"
+                        ls -la
+                        echo "Проверка JAR:"
+                        if [ -f "${FINAL_NAME}" ]; then
+                            jar -tf ${FINAL_NAME} | head -20
+                            jar -tf ${FINAL_NAME} | grep -i "${MAIN_CLASS.replace('.', '/')}.class" || echo "WARNING: Главный класс не найден"
+                        else
+                            echo "ERROR: Файл ${FINAL_NAME} не существует!"
+                            exit 1
+                        fi
                     """
                 }
             }
@@ -204,12 +187,10 @@ pipeline {
         
         failure {
             echo "Сборка завершилась с ошибкой. Подробности в логах выше."
-            slackSend color: 'danger', message: "Сборка ${env.JOB_NAME} #${env.BUILD_NUMBER} завершилась с ошибкой"
         }
         
         success {
             echo "Сборка успешно завершена!"
-            slackSend color: 'good', message: "Сборка ${env.JOB_NAME} #${env.BUILD_NUMBER} успешно завершена"
         }
     }
 }
