@@ -26,13 +26,18 @@ pipeline {
             }
         }
         
-        stage('Install unzip') {
+        stage('Install Tools') {
             steps {
                 sh '''
-                    # Устанавливаем unzip если отсутствует
+                    # Устанавливаем необходимые утилиты
                     if ! command -v unzip >/dev/null 2>&1; then
                         echo "Устанавливаем unzip..."
                         sudo apt-get update && sudo apt-get install -y unzip || true
+                    fi
+                    
+                    if ! command -v file >/dev/null 2>&1; then
+                        echo "Устанавливаем file..."
+                        sudo apt-get install -y file || true
                     fi
                 '''
             }
@@ -60,9 +65,13 @@ pipeline {
                                 exit 1
                             fi
                             
-                            # Проверяем валидность JAR (используем jar вместо unzip)
+                            # Проверяем валидность JAR
                             if ! jar -tf "target/${ARTIFACT_NAME}" >/dev/null 2>&1; then
                                 echo "ERROR: JAR-файл поврежден или невалиден"
+                                echo "Информация о файле:"
+                                file "target/${ARTIFACT_NAME}"
+                                echo "Первые 100 байт файла:"
+                                head -c 100 "target/${ARTIFACT_NAME}" | hexdump -C
                                 exit 1
                             fi
                             
@@ -88,20 +97,19 @@ pipeline {
         }
         
         stage('Archive Artifacts') {
-            when {
-                branch 'main'
-            }
             steps {
                 dir('apps/webbooks') {
-                    archiveArtifacts artifacts: "target/${FINAL_NAME}", fingerprint: true
-                    archiveArtifacts artifacts: "target/${ARTIFACT_NAME}", fingerprint: true
+                    // Архивируем все JAR-файлы в target
+                    archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
                     
                     sh """
                         echo "=== Информация о артефактах ==="
-                        echo "Размер ${FINAL_NAME}:"
-                        du -h "target/${FINAL_NAME}"
-                        echo "MD5:"
-                        md5sum "target/${FINAL_NAME}" || true
+                        echo "Содержимое target/:"
+                        ls -la target/
+                        echo "Размеры файлов:"
+                        du -h target/*.jar
+                        echo "Типы файлов:"
+                        file target/*.jar
                     """
                 }
             }
@@ -112,14 +120,20 @@ pipeline {
                 branch 'main'
             }
             steps {
-                build job: 'Webbooks-Deploy',
-                    parameters: [
-                        string(name: 'TARGET_HOST', value: env.DEPLOY_HOST),
-                        string(name: 'DEPLOY_PATH', value: env.DEPLOY_PATH),
-                        string(name: 'SOURCE_JOB', value: env.JOB_NAME),
-                        string(name: 'ARTIFACT_PATH', value: "apps/webbooks/target/${FINAL_NAME}")
-                    ],
-                    wait: false
+                script {
+                    // Передаем номер сборки как строку
+                    def buildNumberStr = "${currentBuild.number}"
+                    
+                    build job: 'Webbooks-Deploy',
+                        parameters: [
+                            string(name: 'TARGET_HOST', value: env.DEPLOY_HOST),
+                            string(name: 'DEPLOY_PATH', value: env.DEPLOY_PATH),
+                            string(name: 'SOURCE_JOB', value: env.JOB_NAME),
+                            string(name: 'SOURCE_BUILD_NUMBER', value: buildNumberStr),
+                            string(name: 'ARTIFACT_PATH', value: "apps/webbooks/target/${FINAL_NAME}")
+                        ],
+                        wait: false
+                }
             }
         }
     }
@@ -132,7 +146,7 @@ pipeline {
                         echo "=== Финальная проверка артефактов ==="
                         ls -la
                         echo "Проверка JAR:"
-                        jar -tf ${FINAL_NAME} || echo "Проверка не удалась"
+                        jar -tf *.jar || echo "Проверка не удалась"
                     """
                 }
             }
@@ -140,7 +154,6 @@ pipeline {
         
         failure {
             echo "Сборка завершилась с ошибкой. Подробности в логах выше."
-            // Убрали slackSend, так как плагин не установлен
         }
         
         success {
