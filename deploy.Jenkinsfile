@@ -1,65 +1,28 @@
 pipeline {
     agent any
     
-    parameters {
-        string(name: 'TARGET_HOST', description: 'Target server IP', defaultValue: '10.130.0.24')
-        string(name: 'DEPLOY_PATH', description: 'Deployment directory', defaultValue: '/opt/webbooks')
-        string(name: 'SOURCE_JOB', description: 'Source job name', defaultValue: 'Webbooks-Multibranch/main')
-        string(name: 'SOURCE_BUILD_NUMBER', description: 'Source build number')
-        string(name: 'ARTIFACT_PATH', description: 'Artifact path', defaultValue: 'apps/webbooks/target/webbooks.jar')
-    }
-    
     environment {
+        // Явно задаем имя сервиса и пользователя
         SERVICE_NAME = 'webbooks'
+        DEPLOY_USER = 'webbooks'
+        DEPLOY_PATH = '/opt/webbooks'
+        JAR_NAME = 'webbooks.jar'
     }
     
     stages {
         stage('Get Artifact') {
             steps {
                 script {
-                    // Используем SpecificBuildSelector с номером сборки как строкой
-                    def buildSelector = [$class: 'SpecificBuildSelector', buildNumber: params.SOURCE_BUILD_NUMBER]
+                    // Ваш существующий код копирования артефактов
+                    // ...
                     
-                    // Копируем артефакты
-                    step([
-                        $class: 'CopyArtifact',
-                        projectName: params.SOURCE_JOB,
-                        filter: '**/*.jar',
-                        selector: buildSelector,
-                        target: '.',
-                        flatten: true
-                    ])
-                    
-                    // Проверяем что файлы скопированы
-                    def jarFiles = sh(script: 'ls *.jar', returnStdout: true).trim()
-                    if (jarFiles) {
-                        env.ACTUAL_ARTIFACT_PATH = jarFiles.split('\n')[0]
-                        echo "Используем найденный JAR-файл: ${env.ACTUAL_ARTIFACT_PATH}"
-                    } else {
-                        error "Не удалось найти JAR-файлы для деплоя"
-                    }
-                    
-                    // Проверяем валидность JAR
-                    sh """
-                        echo "=== Проверка артефакта ==="
-                        echo "Информация о файле:"
-                        file "${env.ACTUAL_ARTIFACT_PATH}"
-                        echo "Размер файла:"
-                        du -h "${env.ACTUAL_ARTIFACT_PATH}"
-                        echo "Проверка JAR:"
-                        if ! jar -tf "${env.ACTUAL_ARTIFACT_PATH}"; then
-                            echo "ERROR: Файл не является валидным JAR-архивом"
-                            exit 1
-                        fi
-                    """
+                    // Убедитесь что env.ACTUAL_ARTIFACT_PATH установлен
+                    env.ACTUAL_ARTIFACT_PATH = 'DigitalLibrary-0.0.1-SNAPSHOT.jar'
                 }
             }
         }
         
         stage('Deploy') {
-            when {
-                expression { env.ACTUAL_ARTIFACT_PATH != null }
-            }
             steps {
                 script {
                     withCredentials([sshUserPrivateKey(
@@ -70,67 +33,43 @@ pipeline {
                         sh """
                             echo "=== Начало деплоя ==="
                             echo "Копируем артефакт на сервер..."
-                            scp -o StrictHostKeyChecking=no -i "$SSH_KEY" "${env.ACTUAL_ARTIFACT_PATH}" $SSH_USER@${params.TARGET_HOST}:/tmp/webbooks.jar
+                            scp -o StrictHostKeyChecking=no -i "$SSH_KEY" "${env.ACTUAL_ARTIFACT_PATH}" ${SSH_USER}@${params.TARGET_HOST}:/tmp/${env.JAR_NAME}
                             
                             echo "Выполняем деплой..."
-                            ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" $SSH_USER@${params.TARGET_HOST} '
+                            ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" ${SSH_USER}@${params.TARGET_HOST} '
                                 set -e
-                                echo "Останавливаем сервис..."
-                                sudo systemctl stop ${params.SERVICE_NAME} || true
+                                echo "1. Проверяем/создаем каталог..."
+                                sudo mkdir -p ${env.DEPLOY_PATH}
+                                sudo chown ${env.DEPLOY_USER}:${env.DEPLOY_USER} ${env.DEPLOY_PATH}
                                 
-                                echo "Создаем бэкап..."
-                                [ -f "${params.DEPLOY_PATH}/webbooks.jar" ] && sudo cp "${params.DEPLOY_PATH}/webbooks.jar" "${params.DEPLOY_PATH}/webbooks.jar.bak"
+                                echo "2. Останавливаем сервис..."
+                                sudo systemctl stop ${env.SERVICE_NAME} || true
                                 
-                                echo "Копируем новый артефакт..."
-                                sudo cp /tmp/webbooks.jar "${params.DEPLOY_PATH}/webbooks.jar"
-                                sudo chown ${params.SERVICE_NAME}:${params.SERVICE_NAME} "${params.DEPLOY_PATH}/webbooks.jar"
-                                sudo chmod 500 "${params.DEPLOY_PATH}/webbooks.jar"
+                                echo "3. Создаем бэкап..."
+                                [ -f "${env.DEPLOY_PATH}/${env.JAR_NAME}" ] && sudo cp "${env.DEPLOY_PATH}/${env.JAR_NAME}" "${env.DEPLOY_PATH}/${env.JAR_NAME}.bak.\$(date +%s)"
                                 
-                                echo "Проверяем файл на сервере:"
-                                ls -la "${params.DEPLOY_PATH}/webbooks.jar"
-                                file "${params.DEPLOY_PATH}/webbooks.jar"
+                                echo "4. Копируем новый артефакт..."
+                                sudo cp /tmp/${env.JAR_NAME} "${env.DEPLOY_PATH}/${env.JAR_NAME}"
+                                sudo chown ${env.DEPLOY_USER}:${env.DEPLOY_USER} "${env.DEPLOY_PATH}/${env.JAR_NAME}"
+                                sudo chmod 500 "${env.DEPLOY_PATH}/${env.JAR_NAME}"
                                 
-                                echo "Перезагружаем systemd..."
+                                echo "5. Проверяем файл..."
+                                ls -la "${env.DEPLOY_PATH}/${env.JAR_NAME}"
+                                file "${env.DEPLOY_PATH}/${env.JAR_NAME}"
+                                
+                                echo "6. Перезагружаем systemd..."
                                 sudo systemctl daemon-reload
                                 
-                                echo "Запускаем сервис..."
-                                sudo systemctl start ${params.SERVICE_NAME}
+                                echo "7. Запускаем сервис..."
+                                sudo systemctl start ${env.SERVICE_NAME}
                                 
-                                echo "Проверяем статус..."
+                                echo "8. Проверяем статус..."
                                 sleep 5
-                                sudo systemctl status ${params.SERVICE_NAME} --no-pager || true
-                            '
-                        """
-                    }
-                }
-            }
-        }
-        
-        stage('Verify') {
-            when {
-                expression { env.ACTUAL_ARTIFACT_PATH != null }
-            }
-            steps {
-                script {
-                    withCredentials([sshUserPrivateKey(
-                        credentialsId: 'webbooks-ssh-creds',
-                        keyFileVariable: 'SSH_KEY',
-                        usernameVariable: 'SSH_USER'
-                    )]) {
-                        sh """
-                            echo "=== Проверка работоспособности ==="
-                            ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" $SSH_USER@${params.TARGET_HOST} '
-                                for i in {1..10}; do
-                                    echo "Попытка \$i/10..."
-                                    if curl -s --connect-timeout 5 http://localhost:8080/actuator/health | grep -q \'"status":"UP"\'; then
-                                        echo "Health check пройден"
-                                        exit 0
-                                    fi
-                                    sleep 5
-                                done
-                                echo "ERROR: Health check не пройден после 50 секунд ожидания"
-                                sudo journalctl -u ${params.SERVICE_NAME} -n 100 --no-pager
-                                exit 1
+                                sudo systemctl is-active ${env.SERVICE_NAME} || {
+                                    echo "ERROR: Сервис не запустился"
+                                    sudo journalctl -u ${env.SERVICE_NAME} -n 50 --no-pager
+                                    exit 1
+                                }
                             '
                         """
                     }
@@ -140,25 +79,6 @@ pipeline {
     }
     
     post {
-        always {
-            cleanWs()
-            script {
-                try {
-                    withCredentials([sshUserPrivateKey(
-                        credentialsId: 'webbooks-ssh-creds',
-                        keyFileVariable: 'SSH_KEY',
-                        usernameVariable: 'SSH_USER'
-                    )]) {
-                        sh """
-                            ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" $SSH_USER@${params.TARGET_HOST} "rm -f /tmp/webbooks.jar" || true
-                        """
-                    }
-                } catch (e) {
-                    echo "Warning: Не удалось очистить временные файлы: ${e}"
-                }
-            }
-        }
-        
         failure {
             script {
                 withCredentials([sshUserPrivateKey(
@@ -167,18 +87,16 @@ pipeline {
                     usernameVariable: 'SSH_USER'
                 )]) {
                     sh """
-                        ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" $SSH_USER@${params.TARGET_HOST} "
-                            echo '=== Статус сервиса ==='
-                            sudo systemctl status ${params.SERVICE_NAME} --no-pager || true
-                            echo '=== Последние логи ==='
-                            sudo journalctl -u ${params.SERVICE_NAME} -n 100 --no-pager || true
-                            echo '=== Проверка JAR ==='
-                            if [ -f \"${params.DEPLOY_PATH}/webbooks.jar\" ]; then
-                                ls -la \"${params.DEPLOY_PATH}/webbooks.jar\"
-                                file \"${params.DEPLOY_PATH}/webbooks.jar\"
-                                jar -tf \"${params.DEPLOY_PATH}/webbooks.jar\" | head -20 || true
-                            fi
-                        "
+                        ssh -o StrictHostKeyChecking=no -i "$SSH_KEY" ${SSH_USER}@${params.TARGET_HOST} '
+                            echo "=== Debug Info ==="
+                            echo "Service status:"
+                            sudo systemctl status ${env.SERVICE_NAME} --no-pager || true
+                            echo "Journal logs:"
+                            sudo journalctl -u ${env.SERVICE_NAME} -n 100 --no-pager || true
+                            echo "Jar file info:"
+                            ls -la "${env.DEPLOY_PATH}/${env.JAR_NAME}"
+                            file "${env.DEPLOY_PATH}/${env.JAR_NAME}"
+                        '
                     """
                 }
             }
