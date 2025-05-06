@@ -26,6 +26,18 @@ pipeline {
             }
         }
         
+        stage('Install unzip') {
+            steps {
+                sh '''
+                    # Устанавливаем unzip если отсутствует
+                    if ! command -v unzip >/dev/null 2>&1; then
+                        echo "Устанавливаем unzip..."
+                        sudo apt-get update && sudo apt-get install -y unzip || true
+                    fi
+                '''
+            }
+        }
+        
         stage('Build and Test') {
             steps {
                 dir('apps/webbooks') {
@@ -48,8 +60,8 @@ pipeline {
                                 exit 1
                             fi
                             
-                            # Проверяем валидность JAR
-                            if ! unzip -t "target/${ARTIFACT_NAME}" >/dev/null; then
+                            # Проверяем валидность JAR (используем jar вместо unzip)
+                            if ! jar -tf "target/${ARTIFACT_NAME}" >/dev/null 2>&1; then
                                 echo "ERROR: JAR-файл поврежден или невалиден"
                                 exit 1
                             fi
@@ -81,17 +93,13 @@ pipeline {
             }
             steps {
                 dir('apps/webbooks') {
-                    // Архивируем оба артефакта
                     archiveArtifacts artifacts: "target/${FINAL_NAME}", fingerprint: true
                     archiveArtifacts artifacts: "target/${ARTIFACT_NAME}", fingerprint: true
                     
-                    // Диагностика
                     sh """
                         echo "=== Информация о артефактах ==="
                         echo "Размер ${FINAL_NAME}:"
                         du -h "target/${FINAL_NAME}"
-                        echo "Тип файла:"
-                        file "target/${FINAL_NAME}"
                         echo "MD5:"
                         md5sum "target/${FINAL_NAME}" || true
                     """
@@ -104,20 +112,14 @@ pipeline {
                 branch 'main'
             }
             steps {
-                script {
-                    // Явно преобразуем номер сборки в строку
-                    def buildNumberStr = "${currentBuild.number}"
-                    
-                    build job: 'Webbooks-Deploy',
-                        parameters: [
-                            string(name: 'TARGET_HOST', value: env.DEPLOY_HOST),
-                            string(name: 'DEPLOY_PATH', value: env.DEPLOY_PATH),
-                            string(name: 'SOURCE_JOB', value: env.JOB_NAME),
-                            string(name: 'SOURCE_BUILD_NUMBER', value: buildNumberStr), // Передаем как строку
-                            string(name: 'ARTIFACT_PATH', value: "apps/webbooks/target/${FINAL_NAME}")
-                        ],
-                        wait: false
-                }
+                build job: 'Webbooks-Deploy',
+                    parameters: [
+                        string(name: 'TARGET_HOST', value: env.DEPLOY_HOST),
+                        string(name: 'DEPLOY_PATH', value: env.DEPLOY_PATH),
+                        string(name: 'SOURCE_JOB', value: env.JOB_NAME),
+                        string(name: 'ARTIFACT_PATH', value: "apps/webbooks/target/${FINAL_NAME}")
+                    ],
+                    wait: false
             }
         }
     }
@@ -128,25 +130,21 @@ pipeline {
                 dir('apps/webbooks/target') {
                     sh """
                         echo "=== Финальная проверка артефактов ==="
-                        echo "Содержимое target/:"
                         ls -la
-                        echo "Информация о JAR:"
-                        file ${FINAL_NAME}
-                        echo "Проверка целостности:"
-                        unzip -t ${FINAL_NAME} || echo "Проверка не удалась"
+                        echo "Проверка JAR:"
+                        jar -tf ${FINAL_NAME} || echo "Проверка не удалась"
                     """
                 }
             }
         }
         
         failure {
-            slackSend color: 'danger', 
-                     message: "Сборка ${env.JOB_NAME} #${env.BUILD_NUMBER} завершилась с ошибкой: ${currentBuild.currentResult}"
+            echo "Сборка завершилась с ошибкой. Подробности в логах выше."
+            // Убрали slackSend, так как плагин не установлен
         }
         
         success {
-            slackSend color: 'good', 
-                     message: "Сборка ${env.JOB_NAME} #${env.BUILD_NUMBER} успешно завершена"
+            echo "Сборка успешно завершена!"
         }
     }
 }
