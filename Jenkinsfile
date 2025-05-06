@@ -99,7 +99,6 @@ pipeline {
         stage('Archive Artifacts') {
             steps {
                 dir('apps/webbooks') {
-                    // Архивируем все JAR-файлы в target
                     archiveArtifacts artifacts: 'target/*.jar', fingerprint: true
                     
                     sh """
@@ -121,7 +120,6 @@ pipeline {
             }
             steps {
                 script {
-                    // Передаем номер сборки как строку
                     def buildNumberStr = "${currentBuild.number}"
                     
                     build job: 'Webbooks-Deploy',
