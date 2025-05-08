@@ -1,0 +1,39 @@
+#cloud-config
+package_update: true
+packages:
+  - wget
+  - gnupg2
+  - postgresql-12
+  - postgresql-client-12
+
+write_files:
+  - path: /tmp/data.sql
+    content: ${sql_content}
+    encoding: b64
+    owner: postgres:postgres
+    permissions: '0640'
+
+  - path: /tmp/init-db.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      # Configure PostgreSQL
+      curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/postgresql.gpg
+      sudo apt-get update
+      sudo systemctl enable postgresql --now
+
+      # Create user and database
+      sudo -u postgres psql -c "ALTER USER ${db_user} WITH PASSWORD '${db_password}';"
+      sudo -u postgres psql -c "CREATE DATABASE ${db_name};"
+
+      # Load initial data
+      sudo -u postgres psql ${db_name} < /tmp/data.sql
+
+      # Update PostgreSQL config
+      sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = '*'/" /etc/postgresql/12/main/postgresql.conf
+      echo "host all all ${allowed_subnet} md5" | sudo tee -a /etc/postgresql/12/main/pg_hba.conf
+      sudo systemctl restart postgresql
+
+runcmd:
+  - /tmp/init-db.sh
+  - rm /tmp/init-db.sh /tmp/data.sql

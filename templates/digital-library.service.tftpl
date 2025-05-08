@@ -1,0 +1,16 @@
+[Unit]
+Description=Digital Library Application
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu
+ExecStart=/usr/bin/java -jar /home/ubuntu/DigitalLibrary.jar
+Environment="DB_URL=jdbc:postgresql://${db_ip}:5432/webbooks"
+Environment="DB_USERNAME=${db_username}"
+Environment="DB_PASSWORD=${db_password}"
+SuccessExitStatus=143
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,21 @@
+#cloud-config
+package_update: true
+packages:
+  - nginx
+write_files:
+  - path: /etc/nginx/conf.d/backend.conf
+    content: |
+      upstream backend {
+        server ${backend_ip}:8080;
+      }
+      server {
+        listen 80;
+        location / {
+          proxy_pass http://backend;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+        }
+      }
+runcmd:
+  - systemctl enable nginx --now
+  - systemctl restart nginx
