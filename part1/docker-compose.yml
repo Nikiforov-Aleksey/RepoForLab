@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  proxy:
+    image: nginx:alpine
+    depends_on:
+      webbooks:
+        condition: service_started
+    volumes:
+      - ./nginx:/etc/nginx/templates
+    ports:
+      - "80:80"
+    networks:
+           front:
+                ipv4_address: 10.17.1.3
+
+  wbdb-111:
+    image: postgres:12
+    restart: unless-stopped
+    volumes:
+      - ./webbooks/src/main/resources/data.sql:/docker-entrypoint-initdb.d/db.sql
+      - webbooks-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: db_webbooks
+    ports:
+          - "5432:5432"
+    networks:
+            back:
+                ipv4_address: 10.17.2.3
+
+  webbooks:
+        hostname: webbooks
+        depends_on:
+          - wbdb-111
+        build:
+          context: .
+          dockerfile: Dockerfile
+        ports:
+          - "8080:8080"
+        networks:
+            front:
+                ipv4_address: 10.17.1.2
+            back:
+                ipv4_address: 10.17.2.2
+
+volumes:
+    webbooks-data:
+
+networks:
+    front:
+        driver: bridge
+        ipam:
+            config:
+              - subnet: 10.17.1.0/24
+    back:
+        driver: bridge
+        ipam:
+            config:
+              - subnet: 10.17.2.0/24
