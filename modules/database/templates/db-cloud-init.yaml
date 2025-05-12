@@ -1,0 +1,10 @@
+#cloud-config
+package_update: true
+packages:
+  - postgresql-${pg_version}
+  - postgresql-contrib
+runcmd:
+  - sudo -u postgres psql -c "CREATE USER ${db_user} WITH PASSWORD '${db_password}';"
+  - sudo -u postgres psql -c "CREATE DATABASE ${db_name} OWNER ${db_user};"
+  - echo "host all all ${allowed_subnet} md5" | sudo tee -a /etc/postgresql/${pg_version}/main/pg_hba.conf
+  - sudo systemctl restart postgresql
