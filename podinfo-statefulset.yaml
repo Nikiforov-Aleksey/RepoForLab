@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: levelup
+  labels:
+    name: levelup
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: podinfo
+  namespace: levelup
+spec:
+  selector:
+    matchLabels:
+      app: podinfo
+  serviceName: podinfo
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: podinfo
+    spec:
+      containers:
+        - name: podinfo
+          image: ghcr.io/stefanprodan/podinfo:6.7.0
+          command:
+            - ./podinfo
+            - '--port=9000'
+          ports:
+            - name: http
+              containerPort: 9000
+              protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: podinfo
+  namespace: levelup
+spec:
+  selector:
+    app: podinfo
+  type: ClusterIP
+  ports:
+  - name: podinfo
+    protocol: TCP
+    port: 9000
+    targetPort: 9000
