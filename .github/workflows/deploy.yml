@@ -108,7 +108,7 @@ jobs:
       run: |
         ssh -i ~/.ssh/id_rsa naa@${{ env.TF_VM_IP }} "
           cd $TF_DIR
-          terraform init
+          terraform init -reconfigure
           terraform apply -auto-approve \
             -var='artifact_path=${{ env.S3_PATH }}' \
             -var='yc_access_key=${{ secrets.YC_ACCESS_KEY }}' \
