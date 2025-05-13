@@ -84,25 +84,18 @@ jobs:
         echo "Artifact name: ${{ env.ARTIFACT_NAME }}"
         echo "S3 Path: ${{ env.S3_PATH }}"
         
-    - name: Setup SSH
-  run: |
-    mkdir -p ~/.ssh
-    echo "${{ secrets.TF_SSH_KEY }}" > ~/.ssh/id_rsa
-    chmod 600 ~/.ssh/id_rsa
-    echo "Host ${{ env.TF_VM_IP }}" >> ~/.ssh/config
-    echo "  User naa" >> ~/.ssh/config
-    echo "  IdentityFile ~/.ssh/id_rsa" >> ~/.ssh/config
-    ssh-keyscan ${{ env.TF_VM_IP }} >> ~/.ssh/known_hosts
-
     - name: Deploy infrastructure
-    env:
-    TF_DIR: '~/RepoForLab/infra'
-    run: |
-    ssh -i ~/.ssh/id_rsa naa@${{ env.TF_VM_IP }} "
-      cd $TF_DIR
-      terraform init
-      terraform apply -auto-approve \
-        -var='artifact_path=${{ env.S3_PATH }}' \
-        -var='yc_access_key=${{ secrets.YC_ACCESS_KEY }}' \
-        -var='yc_secret_key=${{ secrets.YC_SECRET_KEY }}'
-    "
+      env:
+        TF_VM_IP: '158.160.184.242'
+        TF_VAR_artifact_path: ${{ env.S3_PATH }}
+        TF_VAR_yc_access_key: ${{ secrets.YC_ACCESS_KEY }}
+        TF_VAR_yc_secret_key: ${{ secrets.YC_SECRET_KEY }}
+      run: |
+        ssh -o StrictHostKeyChecking=no naa@${{ env.TF_VM_IP }} "
+          cd ${{ env.TF_DIR }}
+          terraform init
+          terraform apply -auto-approve \
+            -var='artifact_path=${{ env.S3_PATH }}' \
+            -var='yc_access_key=${{ secrets.YC_ACCESS_KEY }}' \
+            -var='yc_secret_key=${{ secrets.YC_SECRET_KEY }}'
+        "
