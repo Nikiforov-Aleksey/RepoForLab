@@ -91,10 +91,11 @@ jobs:
         TF_VAR_yc_access_key: ${{ secrets.YC_ACCESS_KEY }}
         TF_VAR_yc_secret_key: ${{ secrets.YC_SECRET_KEY }}
       run: |
-        ssh ${{ env.TF_VM_IP }} "
-      terraform init
-      terraform apply -auto-approve \
-        -var='artifact_path=${{ env.S3_PATH }}' \
-        -var='yc_access_key=$TF_VAR_yc_access_key' \
-        -var='yc_secret_key=$TF_VAR_yc_secret_key'
-    "
+        ssh -o StrictHostKeyChecking=no naa@${{ env.TF_VM_IP }} "
+          cd ${{ env.TF_DIR }}
+          terraform init
+          terraform apply -auto-approve \
+            -var='artifact_path=${{ env.S3_PATH }}' \
+            -var='yc_access_key=${{ secrets.YC_ACCESS_KEY }}' \
+            -var='yc_secret_key=${{ secrets.YC_SECRET_KEY }}'
+        "
