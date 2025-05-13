@@ -1,0 +1,38 @@
+name: CI/CD Pipeline
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+      - name: Build and test
+        run: mvn clean test
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+      - name: Build
+        run: |
+          mvn clean package
+          cp target/*.jar DigitalLibrary-${{ github.sha }}.jar
+      - name: Deploy
+        run: |
+          cd infra
+          terraform init
+          terraform apply -auto-approve \
+            -var="artifact_version=${{ github.sha }}" \
+            -var="environment=prod"
