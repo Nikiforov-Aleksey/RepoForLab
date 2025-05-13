@@ -1,4 +1,4 @@
-name: Build and Upload to Yandex Cloud Storage
+name: Build and Upload Webbooks to Yandex Cloud Storage
 
 on:
   push:
@@ -10,6 +10,7 @@ env:
   S3_ENDPOINT: 'storage.yandexcloud.net'
   S3_BUCKET: 'webbooks-artifacts'
   S3_FOLDER: 'artifacts'
+  PROJECT_DIR: 'apps/webbooks'  # Указываем путь к проекту
 
 jobs:
   build:
@@ -24,25 +25,23 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
     
-    - name: Set up Maven
-      uses: stCarolas/setup-maven@v4
-      with:
-        maven-version: 3.8.6
-    
-    - name: Cache Maven packages
-      uses: actions/cache@v3
-      with:
-        path: ~/.m2
-        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-        restore-keys: ${{ runner.os }}-m2-
+    - name: Verify Maven Wrapper
+      run: |
+        cd ${{ env.PROJECT_DIR }}
+        if [ ! -f "./mvnw" ]; then
+          echo "Error: Maven wrapper not found at ${{ env.PROJECT_DIR }}/mvnw"
+          exit 1
+        fi
+        chmod +x ./mvnw
+        ./mvnw --version
     
     - name: Build with Maven
-      run: ./mvn clean package -DskipTests
+      run: |
+        cd ${{ env.PROJECT_DIR }}
+        ./mvnw clean package -DskipTests
       
     - name: Install AWS CLI
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y awscli
+      run: sudo apt-get install -y awscli
         
     - name: Configure S3 credentials
       env:
@@ -66,24 +65,21 @@ jobs:
     
     - name: Upload to Yandex Cloud Storage
       run: |
-        # Generate artifact name with timestamp and commit hash
+        cd ${{ env.PROJECT_DIR }}
         TIMESTAMP=$(date +%Y%m%d_%H%M%S)
         COMMIT_HASH=$(git rev-parse --short HEAD)
         ARTIFACT_NAME="webbooks-${TIMESTAMP}-${COMMIT_HASH}.jar"
         
-        # Rename and upload artifact
         mv target/*.jar ${ARTIFACT_NAME}
         aws --endpoint-url=https://${{ env.S3_ENDPOINT }} s3 cp \
           ${ARTIFACT_NAME} \
           s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/
         
-        # Generate download URL
-        echo "Download URL: https://${{ env.S3_ENDPOINT }}/${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/${ARTIFACT_NAME}"
         echo "ARTIFACT_NAME=${ARTIFACT_NAME}" >> $GITHUB_ENV
+        echo "S3_PATH=s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/${ARTIFACT_NAME}" >> $GITHUB_ENV
     
     - name: Output upload information
       run: |
         echo "Artifact successfully uploaded to Yandex Cloud Storage"
         echo "Artifact name: ${{ env.ARTIFACT_NAME }}"
-        echo "Bucket: ${{ env.S3_BUCKET }}"
-        echo "Full path: s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/${{ env.ARTIFACT_NAME }}"
+        echo "S3 Path: ${{ env.S3_PATH }}"
