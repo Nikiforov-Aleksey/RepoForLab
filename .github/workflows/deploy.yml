@@ -1,4 +1,4 @@
-ame: Build and Upload Webbooks to Yandex Cloud Storage
+name: Build and Upload Webbooks to Yandex Cloud Storage
 
 on:
   push:
