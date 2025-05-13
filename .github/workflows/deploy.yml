@@ -7,6 +7,7 @@ on:
     branches: [ main ]
 
 env:
+  TF_VM_IP: "158.160.184.242"
   S3_ENDPOINT: 'storage.yandexcloud.net'
   S3_BUCKET: 'webbooks-artifacts'
   S3_FOLDER: 'artifacts'
@@ -86,35 +87,28 @@ jobs:
         
     - name: Setup SSH
       run: |
-       mkdir -p ~/.ssh
-       echo "${{ secrets.TF_SSH_KEY }}" > ~/.ssh/id_rsa
-       chmod 600 ~/.ssh/id_rsa
-       echo "Host ${{ env.TF_VM_IP }}" >> ~/.ssh/config
-       echo "  User naa" >> ~/.ssh/config
-       echo "  IdentityFile ~/.ssh/id_rsa" >> ~/.ssh/config
-       ssh-keyscan ${{ env.TF_VM_IP }} >> ~/.ssh/known_hosts
-       - name: Setup SSH
-        run: |
-        mkdir -p ~/.ssh
-        echo "${{ secrets.TF_SSH_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        echo "Host ${{ env.TF_VM_IP }}" >> ~/.ssh/config
-        echo "  User naa" >> ~/.ssh/config
-        echo "  IdentityFile ~/.ssh/id_rsa" >> ~/.ssh/config
-        ssh-keyscan ${{ env.TF_VM_IP }} >> ~/.ssh/known_hosts
+          mkdir -p ~/.ssh
+          echo "${{ secrets.TF_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          cat <<EOF >> ~/.ssh/config
+          Host ${{ env.TF_VM_IP }}
+          User naa
+          IdentityFile ~/.ssh/id_rsa
+          EOF
+          ssh-keyscan ${{ env.TF_VM_IP }} >> ~/.ssh/known_hosts
 
-       - name: Test SSH connection
-         run: ssh -v -i ~/.ssh/id_rsa naa@${{ env.TF_VM_IP }} "echo 'SSH test successful'"
+    - name: Test SSH connection
+      run: ssh -v -i ~/.ssh/id_rsa naa@${{ env.TF_VM_IP }} "echo 'SSH test successful'"
 
-        - name: Deploy infrastructure
-          env:
-         TF_DIR: '~/RepoForLab/infra'
+    - name: Deploy infrastructure
+    env:
+          TF_DIR: '~/RepoForLab/infra'
           run: |
-              ssh -i ~/.ssh/id_rsa naa@${{ env.TF_VM_IP }} "
-          cd $TF_DIR
-          terraform init
-          terraform apply -auto-approve \
-          -var='artifact_path=${{ env.S3_PATH }}' \
-          -var='yc_access_key=${{ secrets.YC_ACCESS_KEY }}' \
-          -var='yc_secret_key=${{ secrets.YC_SECRET_KEY }}'
-        "
+           ssh -i ~/.ssh/id_rsa naa@${{ env.TF_VM_IP }} "
+            cd $TF_DIR
+            terraform init
+            terraform apply -auto-approve \
+              -var='artifact_path=${{ env.S3_PATH }}' \
+              -var='yc_access_key=${{ secrets.YC_ACCESS_KEY }}' \
+              -var='yc_secret_key=${{ secrets.YC_SECRET_KEY }}'
+           "
