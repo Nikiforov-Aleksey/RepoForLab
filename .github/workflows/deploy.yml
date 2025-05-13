@@ -83,3 +83,18 @@ jobs:
         echo "Artifact successfully uploaded to Yandex Cloud Storage"
         echo "Artifact name: ${{ env.ARTIFACT_NAME }}"
         echo "S3 Path: ${{ env.S3_PATH }}"
+        
+    - name: Deploy infrastructure
+      env:
+        TF_VAR_artifact_path: ${{ env.S3_PATH }}
+        TF_VAR_yc_access_key: ${{ secrets.YC_ACCESS_KEY }}
+        TF_VAR_yc_secret_key: ${{ secrets.YC_SECRET_KEY }}
+      run: |
+        ssh -o StrictHostKeyChecking=no naa@${{ env.TF_VM_IP }} "
+          cd ${{ env.TF_DIR }}
+          terraform init
+          terraform apply -auto-approve \
+            -var='artifact_path=${{ env.S3_PATH }}' \
+            -var='yc_access_key=${{ secrets.YC_ACCESS_KEY }}' \
+            -var='yc_secret_key=${{ secrets.YC_SECRET_KEY }}'
+        "
