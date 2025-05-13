@@ -97,11 +97,14 @@ jobs:
         ssh-keyscan ${{ env.TF_VM_IP }} >> ~/.ssh/known_hosts
         
     - name: Test SSH connection
+      env:
+        TF_VM_IP: '158.160.184.242'
       run: ssh -v -i ~/.ssh/id_rsa naa@${{ env.TF_VM_IP }} "echo 'SSH test successful'"
         
     - name: Deploy infrastructure
       env:
         TF_DIR: '~/RepoForLab/infra'
+        TF_VM_IP: '158.160.184.242'
       run: |
         ssh -i ~/.ssh/id_rsa naa@${{ env.TF_VM_IP }} "
           cd $TF_DIR
