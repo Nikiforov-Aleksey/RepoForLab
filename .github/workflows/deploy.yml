@@ -111,6 +111,7 @@ jobs:
           terraform init -reconfigure
           terraform apply -auto-approve \
             -var='artifact_path=${{ env.S3_PATH }}' \
+            -var='environment=production' \
             -var='yc_access_key=${{ secrets.YC_ACCESS_KEY }}' \
             -var='yc_secret_key=${{ secrets.YC_SECRET_KEY }}'
         "
