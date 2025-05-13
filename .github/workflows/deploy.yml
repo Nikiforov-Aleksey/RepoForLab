@@ -1,4 +1,4 @@
-name: Webbooks CI/CD Pipeline
+name: Build and Upload Webbooks to Yandex Cloud Storage
 
 on:
   push:
@@ -9,13 +9,13 @@ on:
 env:
   S3_ENDPOINT: 'storage.yandexcloud.net'
   S3_BUCKET: 'webbooks-artifacts'
-  PROJECT_DIR: 'apps/webbooks'
-  TF_VM_IP: '158.160.184.242'
-  TF_SSH_KEY: ${{ secrets.TF_SSH_KEY }}
+  S3_FOLDER: 'artifacts'
+  PROJECT_DIR: 'apps/webbooks'  # Указываем путь к проекту
 
 jobs:
-  lint-and-build:
+  build:
     runs-on: ubuntu-22.04
+    
     steps:
     - uses: actions/checkout@v3
     
@@ -25,115 +25,61 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
     
-    - name: Check Maven Wrapper
+    - name: Verify Maven Wrapper
       run: |
         cd ${{ env.PROJECT_DIR }}
+        if [ ! -f "./mvnw" ]; then
+          echo "Error: Maven wrapper not found at ${{ env.PROJECT_DIR }}/mvnw"
+          exit 1
+        fi
         chmod +x ./mvnw
         ./mvnw --version
     
-    - name: Lint and build
+    - name: Build with Maven
       run: |
         cd ${{ env.PROJECT_DIR }}
         ./mvnw clean package -DskipTests
-      if: github.event_name == 'pull_request'
-    
-    - name: Build and prepare artifact
-      run: |
-        cd ${{ env.PROJECT_DIR }}
-        ./mvnw clean package -DskipTests
-        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-        COMMIT_HASH=$(git rev-parse --short HEAD)
-        ARTIFACT_NAME="webbooks-${TIMESTAMP}-${COMMIT_HASH}.jar"
-        mv target/*.jar ${ARTIFACT_NAME}
-        echo "ARTIFACT_NAME=${ARTIFACT_NAME}" >> $GITHUB_ENV
-      if: github.event_name == 'push'
-    
-    - name: Upload artifact
-      uses: actions/upload-artifact@v3
-      with:
-        name: webbooks-jar
-        path: ${{ env.PROJECT_DIR }}/${{ env.ARTIFACT_NAME }}
-      if: github.event_name == 'push' && env.ARTIFACT_NAME != ''
-
-  deploy-to-s3:
-    needs: lint-and-build
-    runs-on: ubuntu-22.04
-    if: github.event_name == 'push'
-    
-    steps:
-    - name: Download artifact
-      uses: actions/download-artifact@v3
-      with:
-        name: webbooks-jar
+      
+    - name: Install AWS CLI
+      run: sudo apt-get install -y awscli
         
-    - name: Configure AWS CLI
+    - name: Configure S3 credentials
       env:
         AWS_ACCESS_KEY_ID: ${{ secrets.YC_ACCESS_KEY }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.YC_SECRET_KEY }}
       run: |
         mkdir -p ~/.aws
-        echo "[default]
+        cat > ~/.aws/config <<EOF
+        [default]
         region = ru-central1
         s3 =
           endpoint_url = https://${{ env.S3_ENDPOINT }}
-          signature_version = s3v4" > ~/.aws/config
+          signature_version = s3v4
+        EOF
         
-        echo "[default]
+        cat > ~/.aws/credentials <<EOF
+        [default]
         aws_access_key_id = $AWS_ACCESS_KEY_ID
-        aws_secret_access_key = $AWS_SECRET_ACCESS_KEY" > ~/.aws/credentials
+        aws_secret_access_key = $AWS_SECRET_ACCESS_KEY
+        EOF
     
     - name: Upload to Yandex Cloud Storage
       run: |
+        cd ${{ env.PROJECT_DIR }}
+        TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+        COMMIT_HASH=$(git rev-parse --short HEAD)
+        ARTIFACT_NAME="webbooks-${TIMESTAMP}-${COMMIT_HASH}.jar"
+        
+        mv target/*.jar ${ARTIFACT_NAME}
         aws --endpoint-url=https://${{ env.S3_ENDPOINT }} s3 cp \
-          ${{ env.ARTIFACT_NAME }} \
-          s3://${{ env.S3_BUCKET }}/artifacts/
-        echo "S3_PATH=s3://${{ env.S3_BUCKET }}/artifacts/${{ env.ARTIFACT_NAME }}" >> $GITHUB_ENV
-
-  deploy-infrastructure:
-    needs: deploy-to-s3
-    runs-on: ubuntu-22.04
-    if: github.event_name == 'push'
+          ${ARTIFACT_NAME} \
+          s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/
+        
+        echo "ARTIFACT_NAME=${ARTIFACT_NAME}" >> $GITHUB_ENV
+        echo "S3_PATH=s3://${{ env.S3_BUCKET }}/${{ env.S3_FOLDER }}/${ARTIFACT_NAME}" >> $GITHUB_ENV
     
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Install Terraform
-      uses: hashicorp/setup-terraform@v2
-      with:
-        terraform_version: '1.5.7'
-    
-    - name: Deploy infrastructure
-      env:
-        TF_VAR_artifact_path: ${{ env.S3_PATH }}
-        TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+    - name: Output upload information
       run: |
-        ssh -o StrictHostKeyChecking=no -i ${{ env.TF_SSH_KEY }} ubuntu@${{ env.TF_VM_IP }} "
-          cd ~/terraform-webbooks
-          terraform init
-          terraform apply -auto-approve
-        "
-    
-    - name: Verify deployment
-      run: |
-        FRONTEND_IP=$(ssh -i ${{ env.TF_SSH_KEY }} ubuntu@${{ env.TF_VM_IP }} "terraform output -raw frontend_url")
-        echo "Application URL: $FRONTEND_IP"
-        curl -I $FRONTEND_IP
-
-  notify:
-    needs: deploy-infrastructure
-    runs-on: ubuntu-22.04
-    if: always()
-    
-    steps:
-    - name: Send notification
-      uses: rtCamp/action-slack-notify@v2
-      env:
-        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
-        SLACK_COLOR: ${{ job.status == 'success' && '#36a64f' || '#ff0000' }}
-        SLACK_TITLE: 'Webbooks Deployment ${{ job.status }}'
-        SLACK_MESSAGE: |
-          *Commit*: ${{ github.sha }}
-          *Result*: ${{ job.status }}
-          *Workflow*: ${{ github.workflow }}
-          *URL*: ${{ needs.deploy-infrastructure.outputs.frontend_url }}
-      if: github.event_name == 'push'
+        echo "Artifact successfully uploaded to Yandex Cloud Storage"
+        echo "Artifact name: ${{ env.ARTIFACT_NAME }}"
+        echo "S3 Path: ${{ env.S3_PATH }}"
